@@ -2,8 +2,10 @@
 .env
 tg.session
 tg.session-journal
+tg.session.lock
 *.session
 *.session-journal
+*.session.lock
 
 # Local data
 telegram.sqlite

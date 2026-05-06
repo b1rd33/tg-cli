@@ -5,9 +5,4 @@
 #   ./tg backfill --download-media
 #   ./tg listen --notify --download-media
 HERE="$(cd "$(dirname "$0")" && pwd)"
-# Prefer tgcli package when present (post-refactor); fall back to legacy tg_scrape.py.
-if [ -d "$HERE/tgcli" ]; then
-  exec "$HERE/.venv/bin/python" -m tgcli "$@"
-else
-  exec "$HERE/.venv/bin/python" "$HERE/tg_scrape.py" "$@"
-fi
+exec "$HERE/.venv/bin/python" -m tgcli "$@"
