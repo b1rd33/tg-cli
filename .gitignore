@@ -1,0 +1,27 @@
+# Secrets and auth
+.env
+tg.session
+tg.session-journal
+*.session
+*.session-journal
+
+# Local data
+telegram.sqlite
+telegram.sqlite-wal
+telegram.sqlite-shm
+media/
+audit.log
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor
+.DS_Store
+.vscode/
+.idea/
