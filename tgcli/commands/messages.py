@@ -8,7 +8,6 @@ import argparse
 import asyncio
 import json
 import sys
-import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
@@ -27,8 +26,9 @@ from tgcli.client import make_client
 from tgcli.commands._common import (
     AUDIT_PATH, DB_PATH, MEDIA_DIR, ROOT, SESSION_PATH, add_output_flags,
 )
-from tgcli.db import DatabaseMissing, connect, connect_readonly
+from tgcli.db import connect, connect_readonly
 from tgcli.dispatch import run_command
+from tgcli.resolve import resolve_chat_db
 from tgcli.safety import BadArgs
 
 
@@ -53,15 +53,6 @@ def register(sub: argparse._SubParsersAction) -> None:
                     help="Also download photos / voice / video / documents to media/<chat_id>/")
     add_output_flags(bf)
     bf.set_defaults(func=run_backfill)
-
-
-# ---------- helpers ----------
-
-def _strip_accents(s: str | None) -> str:
-    if not s:
-        return ""
-    decomposed = unicodedata.normalize("NFD", s)
-    return "".join(c for c in decomposed if unicodedata.category(c) != "Mn").lower()
 
 
 def _chat_kind(entity) -> str:
@@ -195,30 +186,9 @@ def _show_runner(args) -> dict[str, Any]:
     if args.pattern is None and args.chat_id is None:
         raise BadArgs("Need a pattern or --chat-id. Example: tg show Ijadi")
 
-    con = connect_readonly(DB_PATH)  # raises DatabaseMissing → NOT_FOUND
-
-    chat_id = args.chat_id
-    chat_title: str | None = None
-
-    if chat_id is None:
-        rows = con.execute("SELECT chat_id, title, type FROM tg_chats").fetchall()
-        needle = _strip_accents(args.pattern)
-        matches = [r for r in rows if needle in _strip_accents(r[1])]
-        if not matches:
-            raise DatabaseMissing(f"No chat title contains {args.pattern!r}")
-        if len(matches) > 1:
-            preview = "; ".join(f"{cid} [{kind}] {title}" for cid, title, kind in matches[:8])
-            more = f"; +{len(matches) - 8} more" if len(matches) > 8 else ""
-            raise BadArgs(
-                f"Multiple chats match {args.pattern!r}: {preview}{more}. "
-                f"Disambiguate with --chat-id <id>"
-            )
-        chat_id, chat_title, _ = matches[0]
-    else:
-        row = con.execute("SELECT title FROM tg_chats WHERE chat_id=?", (chat_id,)).fetchone()
-        if not row:
-            raise DatabaseMissing(f"chat_id {chat_id} not in DB")
-        chat_title = row[0]
+    con = connect_readonly(DB_PATH)
+    raw_selector = str(args.chat_id) if args.chat_id is not None else args.pattern
+    chat_id, chat_title = resolve_chat_db(con, raw_selector)
 
     order = "ASC" if args.reverse else "DESC"
     rows = con.execute(

@@ -2,16 +2,10 @@
 
 Responsibilities:
 - Generate a request ID for log/envelope correlation.
-- Run the runner (sync function OR coroutine function); resolve coroutines via asyncio.run.
+- Run the runner, which may be sync or async.
 - Map known exceptions to fail envelopes with stable exit codes.
-- Route output through `output.emit()` honouring --json / --human / TTY auto.
+- Route output through `output.emit()` honoring --json, --human, and TTY auto.
 - Append one entry to the audit log per invocation.
-
-CONTRACT: `run_command(...)` is SYNCHRONOUS and returns an int exit code.
-Each command's `run(args)` MUST be sync and `return run_command(...)`.
-The async version of the work belongs in the runner, not the entry point.
-This avoids nested asyncio.run() (which raises) when __main__ also tries
-to await a coroutine returned from `args.func`.
 """
 from __future__ import annotations
 
@@ -25,6 +19,7 @@ from telethon.errors import FloodWaitError
 from tgcli.client import MissingCredentials, SessionLocked
 from tgcli.db import DatabaseMissing
 from tgcli.output import ExitCode, emit, fail, is_tty_stdout, new_request_id, success
+from tgcli.resolve import Ambiguous, NotFound
 from tgcli.safety import (
     BadArgs,
     LocalRateLimited,
@@ -37,7 +32,7 @@ Runner = Callable[[], Any] | Callable[[], Awaitable[Any]]
 
 
 def _resolve_json_mode(args) -> bool:
-    """Honour --json / --human, else auto-detect from TTY."""
+    """Honor --json / --human, else auto-detect from TTY."""
     if getattr(args, "json", False):
         return True
     if getattr(args, "human", False):
@@ -52,6 +47,10 @@ def _args_repr(args) -> dict[str, Any]:
 
 def _classify_exception(exc: BaseException) -> tuple[ExitCode, str, dict[str, Any]]:
     """Map a known exception to (exit_code, message, extra-fields-for-envelope)."""
+    if isinstance(exc, Ambiguous):
+        return ExitCode.BAD_ARGS, str(exc), {"candidates": exc.candidates}
+    if isinstance(exc, NotFound):
+        return ExitCode.NOT_FOUND, str(exc), {}
     if isinstance(exc, BadArgs):
         return ExitCode.BAD_ARGS, str(exc), {}
     if isinstance(exc, DatabaseMissing):
@@ -101,7 +100,7 @@ def run_command(
 
     try:
         data = _invoke(runner)
-    except BaseException as exc:  # noqa: BLE001 — top-level catch by design
+    except BaseException as exc:
         if isinstance(exc, (KeyboardInterrupt, SystemExit)):
             raise
         code, message, extra = _classify_exception(exc)

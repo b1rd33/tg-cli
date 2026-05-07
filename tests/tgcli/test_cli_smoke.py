@@ -74,3 +74,58 @@ def test_stats_json_envelope_no_db_returns_not_found(tmp_path):
     payload = _json.loads(r.stdout)
     assert payload["ok"] is False
     assert payload["error"]["code"] == "NOT_FOUND"
+
+
+def test_min_msgs_flags_are_accepted(tmp_path):
+    from tgcli.db import connect
+
+    db = tmp_path / "seeded.sqlite"
+    con = connect(db)
+    con.execute("INSERT INTO tg_chats(chat_id, type, title) VALUES (1, 'user', 'Busy')")
+    con.execute("INSERT INTO tg_contacts(user_id, first_name, is_mutual) VALUES (1, 'Busy', 1)")
+    con.execute(
+        """
+        INSERT INTO tg_messages(chat_id, message_id, date, text, is_outgoing, has_media)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (1, 1, "2026-05-01T10:00:00", "hello", 0, 0),
+    )
+    con.commit()
+    con.close()
+
+    env = {
+        **_os.environ,
+        "TG_API_ID": "1",
+        "TG_API_HASH": "x",
+        "TG_DB_PATH": str(db),
+        "TG_AUDIT_PATH": str(tmp_path / "audit.log"),
+    }
+
+    stats_result = _subprocess.run(
+        [str(PYTHON), "-m", "tgcli", "stats", "--min-msgs", "1", "--json"],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert stats_result.returncode == 0, f"stderr: {stats_result.stderr}"
+    assert _json.loads(stats_result.stdout)["ok"] is True
+
+    contacts_result = _subprocess.run(
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "contacts",
+            "--chatted",
+            "--min-msgs",
+            "1",
+            "--json",
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert contacts_result.returncode == 0, f"stderr: {contacts_result.stderr}"
+    assert _json.loads(contacts_result.stdout)["ok"] is True

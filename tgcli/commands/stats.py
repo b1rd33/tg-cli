@@ -1,6 +1,6 @@
-"""`tg stats` — DB summary.
+"""`tg stats` - DB summary.
 
-Read-only: queries telegram.sqlite, returns counts + top-10 chats + media-by-type.
+Read-only: queries telegram.sqlite, returns counts + top chats + media-by-type.
 """
 from __future__ import annotations
 
@@ -14,11 +14,22 @@ from tgcli.dispatch import run_command
 
 def register(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser("stats", help="DB summary")
+    p.add_argument(
+        "--min-msgs",
+        type=int,
+        default=0,
+        help="Only include top chats with at least N cached messages",
+    )
     add_output_flags(p)
     p.set_defaults(func=run)
 
 
-def _gather() -> dict[str, Any]:
+def _min_msgs(args) -> int:
+    return max(int(getattr(args, "min_msgs", 0) or 0), 0)
+
+
+def _gather(args) -> dict[str, Any]:
+    min_msgs = _min_msgs(args)
     con = connect_readonly(DB_PATH)
     chats = con.execute("SELECT COUNT(*) FROM tg_chats").fetchone()[0]
     messages = con.execute("SELECT COUNT(*) FROM tg_messages").fetchone()[0]
@@ -34,9 +45,11 @@ def _gather() -> dict[str, Any]:
         FROM tg_messages m
         JOIN tg_chats c ON c.chat_id = m.chat_id
         GROUP BY m.chat_id
+        HAVING COUNT(*) >= ?
         ORDER BY n DESC
         LIMIT 10
-        """
+        """,
+        (min_msgs,),
     ).fetchall()
     media_rows = con.execute(
         """
@@ -52,6 +65,7 @@ def _gather() -> dict[str, Any]:
     return {
         "db_path": str(DB_PATH),
         "db_kb": DB_PATH.stat().st_size // 1024,
+        "filters": {"min_msgs": min_msgs},
         "chats": chats,
         "chats_by_kind": by_kind,
         "messages": messages,
@@ -59,10 +73,10 @@ def _gather() -> dict[str, Any]:
         "latest_message": (
             {"date": last[0], "chat_id": last[1]} if last else None
         ),
-        "top_chats": [{"title": t, "messages": n} for t, n in top_chats],
+        "top_chats": [{"title": title, "messages": n} for title, n in top_chats],
         "media_by_type": [
-            {"type": mtype or "?", "seen": total, "downloaded": dled or 0}
-            for mtype, total, dled in media_rows
+            {"type": media_type or "?", "seen": total, "downloaded": downloaded or 0}
+            for media_type, total, downloaded in media_rows
         ],
     }
 
@@ -73,8 +87,8 @@ def _human(data: dict) -> None:
     print(f"Messages: {data['messages']}")
     print(f"Contacts: {data['contacts']}")
     if data["latest_message"]:
-        lm = data["latest_message"]
-        print(f"Latest:   {lm['date']}  (chat_id {lm['chat_id']})")
+        latest = data["latest_message"]
+        print(f"Latest:   {latest['date']}  (chat_id {latest['chat_id']})")
     if data["top_chats"]:
         print("\nTop 10 chats by message count:")
         for row in data["top_chats"]:
@@ -88,7 +102,7 @@ def _human(data: dict) -> None:
 def run(args) -> int:
     return run_command(
         "stats", args,
-        runner=_gather,
+        runner=lambda: _gather(args),
         human_formatter=_human,
         audit_path=AUDIT_PATH,
     )
