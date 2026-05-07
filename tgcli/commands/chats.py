@@ -12,9 +12,13 @@ from telethon.errors.rpcerrorlist import (
 from telethon.tl.functions.messages import (
     CreateForumTopicRequest,
     EditForumTopicRequest,
+    GetDialogFiltersRequest,
     GetForumTopicsRequest,
+    UpdateDialogFilterRequest,
+    UpdateDialogFiltersOrderRequest,
     UpdatePinnedForumTopicRequest,
 )
+from telethon.tl.types import DialogFilter, DialogFilterChatlist, DialogFilterDefault, TextWithEntities
 
 from tgcli.client import make_client
 from tgcli.commands._common import (
@@ -42,6 +46,40 @@ from tgcli.idempotency import lookup as lookup_idempotency
 from tgcli.idempotency import record as record_idempotency
 from tgcli.resolve import NotFound, resolve_chat_db
 from tgcli.safety import BadArgs, audit_pre, require_write_allowed
+
+
+_FOLDER_BOOL_FIELDS = (
+    "contacts",
+    "non_contacts",
+    "groups",
+    "broadcasts",
+    "bots",
+    "exclude_muted",
+    "exclude_read",
+    "exclude_archived",
+)
+
+
+def _folder_flag_name(field: str) -> str:
+    return field.replace("_", "-")
+
+
+def _add_folder_create_bool_flags(parser: argparse.ArgumentParser) -> None:
+    for field in _FOLDER_BOOL_FIELDS:
+        parser.add_argument(
+            f"--{_folder_flag_name(field)}",
+            dest=field,
+            action="store_true",
+            default=False,
+        )
+
+
+def _add_folder_edit_bool_flags(parser: argparse.ArgumentParser) -> None:
+    for field in _FOLDER_BOOL_FIELDS:
+        flag = _folder_flag_name(field)
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument(f"--{flag}", dest=field, action="store_true", default=None)
+        group.add_argument(f"--no-{flag}", dest=field, action="store_false")
 
 
 def register(sub: argparse._SubParsersAction) -> None:
@@ -102,6 +140,65 @@ def register(sub: argparse._SubParsersAction) -> None:
     add_output_flags(unpin)
     unpin.set_defaults(func=run_topic_unpin)
 
+    folders = sub.add_parser("folders-list", help="List Telegram dialog folders")
+    folders.add_argument("--query", default=None, help="Filter folders by title substring")
+    add_output_flags(folders)
+    folders.set_defaults(func=run_folders_list)
+
+    folder_show = sub.add_parser("folder-show", help="Show one Telegram dialog folder")
+    folder_show.add_argument("folder_id", type=int, help="Folder id")
+    add_output_flags(folder_show)
+    folder_show.set_defaults(func=run_folder_show)
+
+    folder_create = sub.add_parser("folder-create", help="Create a Telegram dialog folder")
+    folder_create.add_argument("title", help="Folder title")
+    folder_create.add_argument("--emoticon", default=None, help="Folder emoji")
+    folder_create.add_argument("--include-chat", type=int, action="append", default=[], help="Integer chat_id to include")
+    folder_create.add_argument("--exclude-chat", type=int, action="append", default=[], help="Integer chat_id to exclude")
+    _add_folder_create_bool_flags(folder_create)
+    add_write_flags(folder_create, destructive=False)
+    add_output_flags(folder_create)
+    folder_create.set_defaults(func=run_folder_create)
+
+    folder_edit = sub.add_parser("folder-edit", help="Edit a Telegram dialog folder")
+    folder_edit.add_argument("folder_id", type=int, help="Folder id")
+    folder_edit.add_argument("--title", default=None, help="New folder title")
+    folder_edit.add_argument("--emoticon", default=None, help="New folder emoji")
+    folder_edit.add_argument("--clear-include", action="store_true", help="Clear include peers before adding")
+    folder_edit.add_argument("--clear-exclude", action="store_true", help="Clear exclude peers before adding")
+    folder_edit.add_argument("--include-chat", type=int, action="append", default=[], help="Integer chat_id to include")
+    folder_edit.add_argument("--exclude-chat", type=int, action="append", default=[], help="Integer chat_id to exclude")
+    _add_folder_edit_bool_flags(folder_edit)
+    add_write_flags(folder_edit, destructive=False)
+    add_output_flags(folder_edit)
+    folder_edit.set_defaults(func=run_folder_edit)
+
+    folder_delete = sub.add_parser("folder-delete", help="Delete a Telegram dialog folder")
+    folder_delete.add_argument("folder_id", type=int, help="Folder id")
+    add_write_flags(folder_delete, destructive=False)
+    add_output_flags(folder_delete)
+    folder_delete.set_defaults(func=run_folder_delete)
+
+    folder_add = sub.add_parser("folder-add-chat", help="Add a chat to a Telegram dialog folder")
+    folder_add.add_argument("folder_id", type=int, help="Folder id")
+    folder_add.add_argument("chat", help="Chat id, @username, or fuzzy title with --fuzzy")
+    add_write_flags(folder_add, destructive=False)
+    add_output_flags(folder_add)
+    folder_add.set_defaults(func=run_folder_add_chat)
+
+    folder_remove = sub.add_parser("folder-remove-chat", help="Remove a chat from a Telegram dialog folder")
+    folder_remove.add_argument("folder_id", type=int, help="Folder id")
+    folder_remove.add_argument("chat", help="Chat id, @username, or fuzzy title with --fuzzy")
+    add_write_flags(folder_remove, destructive=False)
+    add_output_flags(folder_remove)
+    folder_remove.set_defaults(func=run_folder_remove_chat)
+
+    folders_reorder = sub.add_parser("folders-reorder", help="Reorder Telegram dialog folders")
+    folders_reorder.add_argument("folder_ids", type=int, nargs="+", help="Folder ids in desired order")
+    add_write_flags(folders_reorder, destructive=False)
+    add_output_flags(folders_reorder)
+    folders_reorder.set_defaults(func=run_folders_reorder)
+
 
 def _topic_edit_mutations(args) -> dict[str, Any]:
     if getattr(args, "closed", False) and getattr(args, "reopen", False):
@@ -127,6 +224,712 @@ def _topic_edit_mutations(args) -> dict[str, Any]:
     if not mutations:
         raise BadArgs("nothing to edit")
     return mutations
+
+
+def _folder_title(value: str) -> TextWithEntities:
+    text = str(value).strip()
+    if text == "":
+        raise BadArgs("folder title cannot be empty")
+    return TextWithEntities(text=text, entities=[])
+
+
+def _folder_title_text(value) -> str:
+    if isinstance(value, TextWithEntities):
+        return value.text
+    text = getattr(value, "text", None)
+    if text is not None:
+        return str(text)
+    return str(value or "")
+
+
+def _folder_type(folder) -> str:
+    if isinstance(folder, DialogFilterDefault):
+        return "default"
+    if isinstance(folder, DialogFilterChatlist):
+        return "chatlist"
+    if isinstance(folder, DialogFilter):
+        return "filter"
+    return type(folder).__name__
+
+
+def _folder_id(folder) -> int:
+    return int(getattr(folder, "id", 0) or 0)
+
+
+def _peer_count(folder, attr: str) -> int:
+    return len(getattr(folder, attr, None) or [])
+
+
+def _folder_flags(folder) -> dict[str, bool]:
+    return {field: bool(getattr(folder, field, False)) for field in _FOLDER_BOOL_FIELDS}
+
+
+def _folder_summary(folder) -> dict[str, Any]:
+    return {
+        "folder_id": _folder_id(folder),
+        "title": "All chats" if isinstance(folder, DialogFilterDefault) else _folder_title_text(getattr(folder, "title", "")),
+        "emoticon": getattr(folder, "emoticon", None),
+        "type": _folder_type(folder),
+        "is_default": isinstance(folder, DialogFilterDefault) or _folder_id(folder) == 0,
+        "is_chatlist": isinstance(folder, DialogFilterChatlist),
+        "pinned_peer_count": _peer_count(folder, "pinned_peers"),
+        "include_peer_count": _peer_count(folder, "include_peers"),
+        "exclude_peer_count": _peer_count(folder, "exclude_peers"),
+        "flags": _folder_flags(folder),
+    }
+
+
+def _folders_from_result(result) -> list[Any]:
+    if isinstance(result, (list, tuple)):
+        return list(result)
+    for attr in ("filters", "dialog_filters", "folders"):
+        value = getattr(result, attr, None)
+        if value is not None:
+            return list(value)
+    return []
+
+
+def _matching_folder(filters: list[Any], folder_id: int):
+    for folder in filters:
+        if _folder_id(folder) == int(folder_id):
+            return folder
+    raise NotFound(f"folder {folder_id} not found")
+
+
+def _require_folder_write_key(args) -> None:
+    if not getattr(args, "idempotency_key", None):
+        raise BadArgs("--idempotency-key is required for folder write commands")
+
+
+def _ensure_mutable_folder(folder, folder_id: int) -> DialogFilter:
+    if not isinstance(folder, DialogFilter):
+        raise BadArgs(f"folder {folder_id} is not a mutable custom folder")
+    return folder
+
+
+def _folder_edit_mutations(args) -> dict[str, Any]:
+    mutations: dict[str, Any] = {}
+    if getattr(args, "title", None) is not None:
+        mutations["title"] = _folder_title(args.title)
+    if getattr(args, "emoticon", None) is not None:
+        mutations["emoticon"] = args.emoticon
+    for field in _FOLDER_BOOL_FIELDS:
+        value = getattr(args, field, None)
+        if value is not None:
+            mutations[field] = bool(value)
+    if getattr(args, "clear_include", False):
+        mutations["clear_include"] = True
+    if getattr(args, "clear_exclude", False):
+        mutations["clear_exclude"] = True
+    if getattr(args, "include_chat", None):
+        mutations["include_chat"] = list(args.include_chat)
+    if getattr(args, "exclude_chat", None):
+        mutations["exclude_chat"] = list(args.exclude_chat)
+    if not mutations:
+        raise BadArgs("nothing to edit")
+    return mutations
+
+
+def _folder_surface_unavailable(command: str) -> dict[str, Any]:
+    raise BadArgs(f"{command} runner is defined by a later Phase 6.2 task")
+
+
+async def _folder_write_surface_runner(args, *, command: str) -> dict[str, Any]:
+    require_write_allowed(args)
+    _require_folder_write_key(args)
+    return _folder_surface_unavailable(command)
+
+
+def run_folders_list(args) -> int:
+    return run_command(
+        "folders-list",
+        args,
+        runner=lambda: _folder_surface_unavailable("folders-list"),
+        human_formatter=_write_human,
+        audit_path=AUDIT_PATH,
+    )
+
+
+def run_folder_show(args) -> int:
+    return run_command(
+        "folder-show",
+        args,
+        runner=lambda: _folder_surface_unavailable("folder-show"),
+        human_formatter=_write_human,
+        audit_path=AUDIT_PATH,
+    )
+
+
+def run_folder_create(args) -> int:
+    return _run_write_command(
+        "folder-create",
+        args,
+        lambda args: _folder_write_surface_runner(args, command="folder-create"),
+    )
+
+
+def run_folder_edit(args) -> int:
+    return _run_write_command(
+        "folder-edit",
+        args,
+        lambda args: _folder_write_surface_runner(args, command="folder-edit"),
+    )
+
+
+def run_folder_delete(args) -> int:
+    return _run_write_command(
+        "folder-delete",
+        args,
+        lambda args: _folder_write_surface_runner(args, command="folder-delete"),
+    )
+
+
+def run_folder_add_chat(args) -> int:
+    return _run_write_command(
+        "folder-add-chat",
+        args,
+        lambda args: _folder_write_surface_runner(args, command="folder-add-chat"),
+    )
+
+
+def run_folder_remove_chat(args) -> int:
+    return _run_write_command(
+        "folder-remove-chat",
+        args,
+        lambda args: _folder_write_surface_runner(args, command="folder-remove-chat"),
+    )
+
+
+def run_folders_reorder(args) -> int:
+    return _run_write_command(
+        "folders-reorder",
+        args,
+        lambda args: _folder_write_surface_runner(args, command="folders-reorder"),
+    )
+
+
+def _peer_id_value(peer) -> int | None:
+    for attr in ("peer_id", "user_id", "chat_id", "channel_id", "id"):
+        value = getattr(peer, attr, None)
+        if value is not None:
+            return int(value)
+    return None
+
+
+def _peer_summary(con, peer) -> dict[str, Any]:
+    peer_id = _peer_id_value(peer)
+    row = None
+    if peer_id is not None:
+        row = con.execute(
+            "SELECT title, type FROM tg_chats WHERE chat_id = ?",
+            (peer_id,),
+        ).fetchone()
+    data = {
+        "peer_id": peer_id,
+        "peer_type": type(peer).__name__,
+        "cached": row is not None,
+        "title": row[0] if row else None,
+        "type": row[1] if row else None,
+    }
+    return data
+
+
+def _folder_detail(folder, con) -> dict[str, Any]:
+    summary = _folder_summary(folder)
+    summary["pinned_peers"] = [_peer_summary(con, peer) for peer in (getattr(folder, "pinned_peers", None) or [])]
+    summary["include_peers"] = [_peer_summary(con, peer) for peer in (getattr(folder, "include_peers", None) or [])]
+    summary["exclude_peers"] = [_peer_summary(con, peer) for peer in (getattr(folder, "exclude_peers", None) or [])]
+    return summary
+
+
+async def _fetch_dialog_filters() -> list[Any]:
+    client = make_client(SESSION_PATH)
+    await client.start()
+    try:
+        result = await client(GetDialogFiltersRequest())
+        return _folders_from_result(result)
+    finally:
+        await client.disconnect()
+
+
+async def _folders_list_runner(args) -> dict[str, Any]:
+    filters = await _fetch_dialog_filters()
+    query = getattr(args, "query", None)
+    summaries = [_folder_summary(folder) for folder in filters]
+    if query:
+        needle = str(query).casefold()
+        summaries = [folder for folder in summaries if needle in str(folder["title"]).casefold()]
+    return {"query": query, "folders": summaries}
+
+
+async def _folder_show_runner(args) -> dict[str, Any]:
+    filters = await _fetch_dialog_filters()
+    folder = _matching_folder(filters, int(args.folder_id))
+    con = connect_readonly(DB_PATH)
+    try:
+        detail = _folder_detail(folder, con)
+    finally:
+        con.close()
+    return {"folder": detail}
+
+
+def _folders_human(data: dict) -> None:
+    for folder in data["folders"]:
+        default = " default" if folder["is_default"] else ""
+        print(f"{folder['folder_id']:>4}  {folder['title']}  {folder['type']}{default}")
+
+
+def _folder_show_human(data: dict) -> None:
+    print(json.dumps(data["folder"], ensure_ascii=False, indent=2, default=str))
+
+
+def run_folders_list(args) -> int:
+    return run_command(
+        "folders-list",
+        args,
+        runner=lambda: _folders_list_runner(args),
+        human_formatter=_folders_human,
+        audit_path=AUDIT_PATH,
+    )
+
+
+def run_folder_show(args) -> int:
+    return run_command(
+        "folder-show",
+        args,
+        runner=lambda: _folder_show_runner(args),
+        human_formatter=_folder_show_human,
+        audit_path=AUDIT_PATH,
+    )
+
+
+async def _input_peers_for_chat_ids(client, chat_ids: list[int]) -> list[Any]:
+    peers = []
+    for chat_id in chat_ids:
+        peers.append(await client.get_input_entity(int(chat_id)))
+    return peers
+
+
+def _next_folder_id(filters: list[Any]) -> int:
+    # Telegram reserves filter id 0 ("All chats") and id 1 ("Archive").
+    # User-created folders must start at 2.
+    ids = [_folder_id(folder) for folder in filters if _folder_id(folder) > 0]
+    if not ids:
+        return 2
+    return max(max(ids) + 1, 2)
+
+
+def _dialog_filter(
+    *,
+    folder_id: int,
+    title,
+    pinned_peers: list[Any],
+    include_peers: list[Any],
+    exclude_peers: list[Any],
+    emoticon: str | None,
+    flags: dict[str, bool | None],
+) -> DialogFilter:
+    return DialogFilter(
+        id=int(folder_id),
+        title=title,
+        pinned_peers=list(pinned_peers),
+        include_peers=list(include_peers),
+        exclude_peers=list(exclude_peers),
+        contacts=flags.get("contacts"),
+        non_contacts=flags.get("non_contacts"),
+        groups=flags.get("groups"),
+        broadcasts=flags.get("broadcasts"),
+        bots=flags.get("bots"),
+        exclude_muted=flags.get("exclude_muted"),
+        exclude_read=flags.get("exclude_read"),
+        exclude_archived=flags.get("exclude_archived"),
+        emoticon=emoticon,
+    )
+
+
+def _folder_create_flags(args) -> dict[str, bool | None]:
+    return {field: bool(getattr(args, field, False)) or None for field in _FOLDER_BOOL_FIELDS}
+
+
+async def _folder_create_runner(args) -> dict[str, Any]:
+    command = "folder-create"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    _require_folder_write_key(args)
+    title = _folder_title(args.title)
+    include_chat_ids = [int(chat_id) for chat_id in (args.include_chat or [])]
+    exclude_chat_ids = [int(chat_id) for chat_id in (args.exclude_chat or [])]
+
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+        payload = {
+            "title": title.text,
+            "emoticon": args.emoticon,
+            "include_chat_ids": include_chat_ids,
+            "exclude_chat_ids": exclude_chat_ids,
+            "flags": _folder_create_flags(args),
+            "telethon_method": "UpdateDialogFilterRequest",
+        }
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=0,
+            resolved_chat_title="dialog folders",
+            payload_preview=payload,
+            telethon_method="UpdateDialogFilterRequest",
+            dry_run=False,
+        )
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            filters = _folders_from_result(await client(GetDialogFiltersRequest()))
+            folder_id = _next_folder_id(filters)
+            include_peers = await _input_peers_for_chat_ids(client, include_chat_ids)
+            exclude_peers = await _input_peers_for_chat_ids(client, exclude_chat_ids)
+            folder = _dialog_filter(
+                folder_id=folder_id,
+                title=title,
+                pinned_peers=[],
+                include_peers=include_peers,
+                exclude_peers=exclude_peers,
+                emoticon=args.emoticon,
+                flags=_folder_create_flags(args),
+            )
+            await client(UpdateDialogFilterRequest(id=folder_id, filter=folder))
+            data = {
+                "folder_id": folder_id,
+                "title": title.text,
+                "emoticon": args.emoticon,
+                "include_peer_count": len(include_peers),
+                "exclude_peer_count": len(exclude_peers),
+                "flags": _folder_flags(folder),
+                "idempotent_replay": False,
+            }
+            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+def run_folder_create(args) -> int:
+    return _run_write_command("folder-create", args, _folder_create_runner)
+
+
+def _dedupe_peers(peers: list[Any]) -> list[Any]:
+    seen: set[Any] = set()
+    out: list[Any] = []
+    for peer in peers:
+        key = _peer_id_value(peer)
+        if key is None:
+            key = id(peer)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(peer)
+    return out
+
+
+def _flags_from_existing(existing: DialogFilter, updates: dict[str, Any]) -> dict[str, bool | None]:
+    flags: dict[str, bool | None] = {}
+    for field in _FOLDER_BOOL_FIELDS:
+        if field in updates:
+            flags[field] = bool(updates[field])
+        else:
+            flags[field] = getattr(existing, field, None)
+    return flags
+
+
+async def _updated_dialog_filter(client, existing: DialogFilter, args, updates: dict[str, Any]) -> DialogFilter:
+    include_peers = [] if updates.get("clear_include") else list(getattr(existing, "include_peers", None) or [])
+    exclude_peers = [] if updates.get("clear_exclude") else list(getattr(existing, "exclude_peers", None) or [])
+    include_peers.extend(await _input_peers_for_chat_ids(client, [int(chat_id) for chat_id in (args.include_chat or [])]))
+    exclude_peers.extend(await _input_peers_for_chat_ids(client, [int(chat_id) for chat_id in (args.exclude_chat or [])]))
+    title = updates.get("title", getattr(existing, "title", _folder_title("Folder")))
+    emoticon = updates.get("emoticon", getattr(existing, "emoticon", None))
+    return _dialog_filter(
+        folder_id=int(existing.id),
+        title=title,
+        pinned_peers=list(getattr(existing, "pinned_peers", None) or []),
+        include_peers=_dedupe_peers(include_peers),
+        exclude_peers=_dedupe_peers(exclude_peers),
+        emoticon=emoticon,
+        flags=_flags_from_existing(existing, updates),
+    )
+
+
+async def _folder_edit_runner(args) -> dict[str, Any]:
+    command = "folder-edit"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    _require_folder_write_key(args)
+    updates = _folder_edit_mutations(args)
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+        payload = {
+            "folder_id": int(args.folder_id),
+            "title": getattr(args, "title", None),
+            "emoticon": getattr(args, "emoticon", None),
+            "clear_include": bool(getattr(args, "clear_include", False)),
+            "clear_exclude": bool(getattr(args, "clear_exclude", False)),
+            "include_chat_ids": list(getattr(args, "include_chat", []) or []),
+            "exclude_chat_ids": list(getattr(args, "exclude_chat", []) or []),
+            "boolean_updates": {field: getattr(args, field) for field in _FOLDER_BOOL_FIELDS if getattr(args, field, None) is not None},
+            "telethon_method": "UpdateDialogFilterRequest",
+        }
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=0,
+            resolved_chat_title=f"folder {int(args.folder_id)}",
+            payload_preview=payload,
+            telethon_method="UpdateDialogFilterRequest",
+            dry_run=False,
+        )
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            filters = _folders_from_result(await client(GetDialogFiltersRequest()))
+            existing = _ensure_mutable_folder(_matching_folder(filters, int(args.folder_id)), int(args.folder_id))
+            folder = await _updated_dialog_filter(client, existing, args, updates)
+            await client(UpdateDialogFilterRequest(id=int(args.folder_id), filter=folder))
+            data = {
+                "folder_id": int(args.folder_id),
+                "title": _folder_title_text(folder.title),
+                "edited": True,
+                "include_peer_count": len(folder.include_peers),
+                "exclude_peer_count": len(folder.exclude_peers),
+                "flags": _folder_flags(folder),
+                "idempotent_replay": False,
+            }
+            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+async def _folder_delete_runner(args) -> dict[str, Any]:
+    command = "folder-delete"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    _require_folder_write_key(args)
+    folder_id = int(args.folder_id)
+    if folder_id == 0:
+        raise BadArgs("folder id 0 is reserved and cannot be deleted")
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+        payload = {"folder_id": folder_id, "telethon_method": "UpdateDialogFilterRequest", "filter": None}
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=0,
+            resolved_chat_title=f"folder {folder_id}",
+            payload_preview=payload,
+            telethon_method="UpdateDialogFilterRequest",
+            dry_run=False,
+        )
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            await client(UpdateDialogFilterRequest(id=folder_id, filter=None))
+            data = {"folder_id": folder_id, "deleted": True, "idempotent_replay": False}
+            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+def run_folder_edit(args) -> int:
+    return _run_write_command("folder-edit", args, _folder_edit_runner)
+
+
+def run_folder_delete(args) -> int:
+    return _run_write_command("folder-delete", args, _folder_delete_runner)
+
+
+def _remove_peer_by_id(peers: list[Any], peer_id: int) -> tuple[list[Any], bool]:
+    out = []
+    removed = False
+    for peer in peers:
+        if _peer_id_value(peer) == int(peer_id):
+            removed = True
+            continue
+        out.append(peer)
+    return out, removed
+
+
+async def _folder_membership_runner(args, *, command: str, add: bool) -> dict[str, Any]:
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    _require_folder_write_key(args)
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+        chat = _resolve_write_chat(con, args, args.chat)
+        payload = {
+            "folder_id": int(args.folder_id),
+            "chat": chat,
+            "action": "add" if add else "remove",
+            "telethon_method": "UpdateDialogFilterRequest",
+        }
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=chat["chat_id"],
+            resolved_chat_title=chat["title"],
+            payload_preview=payload,
+            telethon_method="UpdateDialogFilterRequest",
+            dry_run=False,
+        )
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            filters = _folders_from_result(await client(GetDialogFiltersRequest()))
+            existing = _ensure_mutable_folder(_matching_folder(filters, int(args.folder_id)), int(args.folder_id))
+            target_peer = await client.get_input_entity(chat["chat_id"])
+            include_peers = list(getattr(existing, "include_peers", None) or [])
+            exclude_peers = list(getattr(existing, "exclude_peers", None) or [])
+            warnings: list[str] = []
+            if add:
+                include_peers = _dedupe_peers([*include_peers, target_peer])
+                changed = True
+            else:
+                include_peers, removed = _remove_peer_by_id(include_peers, chat["chat_id"])
+                in_exclude = any(_peer_id_value(peer) == chat["chat_id"] for peer in exclude_peers)
+                if in_exclude and not removed:
+                    warnings.append("chat was present in exclude_peers, not include_peers")
+                changed = removed
+            folder = _dialog_filter(
+                folder_id=int(existing.id),
+                title=getattr(existing, "title", _folder_title("Folder")),
+                pinned_peers=list(getattr(existing, "pinned_peers", None) or []),
+                include_peers=_dedupe_peers(include_peers),
+                exclude_peers=_dedupe_peers(exclude_peers),
+                emoticon=getattr(existing, "emoticon", None),
+                flags={field: getattr(existing, field, None) for field in _FOLDER_BOOL_FIELDS},
+            )
+            await client(UpdateDialogFilterRequest(id=int(args.folder_id), filter=folder))
+            data = {
+                "folder_id": int(args.folder_id),
+                "chat": chat,
+                "added": bool(add and changed),
+                "removed": bool((not add) and changed),
+                "include_peer_count": len(folder.include_peers),
+                "exclude_peer_count": len(folder.exclude_peers),
+                "warnings": warnings,
+                "idempotent_replay": False,
+            }
+            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+async def _folder_add_chat_runner(args) -> dict[str, Any]:
+    return await _folder_membership_runner(args, command="folder-add-chat", add=True)
+
+
+async def _folder_remove_chat_runner(args) -> dict[str, Any]:
+    return await _folder_membership_runner(args, command="folder-remove-chat", add=False)
+
+
+async def _folders_reorder_runner(args) -> dict[str, Any]:
+    command = "folders-reorder"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    _require_folder_write_key(args)
+    order = [int(folder_id) for folder_id in args.folder_ids]
+    if not order:
+        raise BadArgs("at least one folder id is required")
+    if len(order) != len(set(order)):
+        raise BadArgs("folder ids in reorder list must be unique")
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+        payload = {"order": order, "telethon_method": "UpdateDialogFiltersOrderRequest"}
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=0,
+            resolved_chat_title="dialog folders",
+            payload_preview=payload,
+            telethon_method="UpdateDialogFiltersOrderRequest",
+            dry_run=False,
+        )
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            await client(UpdateDialogFiltersOrderRequest(order=order))
+            data = {"order": order, "reordered": True, "idempotent_replay": False}
+            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+def run_folder_add_chat(args) -> int:
+    return _run_write_command("folder-add-chat", args, _folder_add_chat_runner)
+
+
+def run_folder_remove_chat(args) -> int:
+    return _run_write_command("folder-remove-chat", args, _folder_remove_chat_runner)
+
+
+def run_folders_reorder(args) -> int:
+    return _run_write_command("folders-reorder", args, _folders_reorder_runner)
 
 
 # Concrete Telethon error classes for forum detection. Avoid string-matching:

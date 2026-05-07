@@ -555,3 +555,162 @@ def test_phase61_topic_write_dry_run_smoke(tmp_path):
         payload = _json.loads(result.stdout)
         assert payload["ok"] is True
         assert payload["data"]["dry_run"] is True
+
+
+def test_phase62_folder_help_surfaces():
+    read_commands = ["folders-list", "folder-show"]
+    write_commands = [
+        "folder-create",
+        "folder-edit",
+        "folder-delete",
+        "folder-add-chat",
+        "folder-remove-chat",
+        "folders-reorder",
+    ]
+    for command in [*read_commands, *write_commands]:
+        result = _subprocess.run(
+            [str(PYTHON), "-m", "tgcli", command, "--help"],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"command: {command} stderr: {result.stderr}"
+        assert "usage:" in result.stdout.lower()
+
+    for command in write_commands:
+        result = _subprocess.run(
+            [str(PYTHON), "-m", "tgcli", command, "--help"],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+        )
+        assert "--allow-write" in result.stdout
+        assert "--dry-run" in result.stdout
+        assert "--idempotency-key" in result.stdout
+        assert "--fuzzy" in result.stdout
+
+
+def test_phase62_folder_write_gate_smoke(tmp_path):
+    from tgcli.db import connect
+
+    db = tmp_path / "telegram.sqlite"
+    con = connect(db)
+    con.execute(
+        "INSERT INTO tg_chats(chat_id, type, title, username) VALUES (?, ?, ?, ?)",
+        (123, "supergroup", "Alpha Forum", "alpha_forum"),
+    )
+    con.commit()
+    con.close()
+
+    env = {
+        **_os.environ,
+        "TG_API_ID": "1",
+        "TG_API_HASH": "x",
+        "TG_DB_PATH": str(db),
+        "TG_AUDIT_PATH": str(tmp_path / "audit.log"),
+    }
+    commands = [
+        [str(PYTHON), "-m", "tgcli", "folder-create", "Ops", "--include-chat", "123", "--json"],
+        [str(PYTHON), "-m", "tgcli", "folder-edit", "2", "--title", "Ops 2", "--json"],
+        [str(PYTHON), "-m", "tgcli", "folder-delete", "2", "--json"],
+        [str(PYTHON), "-m", "tgcli", "folder-add-chat", "2", "@alpha_forum", "--json"],
+        [str(PYTHON), "-m", "tgcli", "folder-remove-chat", "2", "@alpha_forum", "--json"],
+        [str(PYTHON), "-m", "tgcli", "folders-reorder", "2", "3", "--json"],
+    ]
+    for command in commands:
+        result = _subprocess.run(
+            command,
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode == 6, f"command: {command} stderr: {result.stderr}"
+        payload = _json.loads(result.stdout)
+        assert payload["error"]["code"] == "WRITE_DISALLOWED"
+
+
+def test_phase62_folder_create_dry_run_smoke(tmp_path):
+    from tgcli.db import connect
+
+    db = tmp_path / "telegram.sqlite"
+    con = connect(db)
+    con.execute(
+        "INSERT INTO tg_chats(chat_id, type, title, username) VALUES (?, ?, ?, ?)",
+        (123, "supergroup", "Alpha Forum", "alpha_forum"),
+    )
+    con.commit()
+    con.close()
+
+    env = {
+        **_os.environ,
+        "TG_API_ID": "1",
+        "TG_API_HASH": "x",
+        "TG_DB_PATH": str(db),
+        "TG_AUDIT_PATH": str(tmp_path / "audit.log"),
+    }
+    result = _subprocess.run(
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "folder-create",
+            "Ops",
+            "--include-chat",
+            "123",
+            "--allow-write",
+            "--idempotency-key",
+            "phase62-folder-create-dry-run",
+            "--dry-run",
+            "--json",
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    payload = _json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["data"]["dry_run"] is True
+    assert payload["data"]["payload"]["include_chat_ids"] == [123]
+
+
+def test_phase62_folder_other_write_dry_run_smoke(tmp_path):
+    from tgcli.db import connect
+
+    db = tmp_path / "telegram.sqlite"
+    con = connect(db)
+    con.execute(
+        "INSERT INTO tg_chats(chat_id, type, title, username) VALUES (?, ?, ?, ?)",
+        (123, "supergroup", "Alpha Forum", "alpha_forum"),
+    )
+    con.commit()
+    con.close()
+
+    env = {
+        **_os.environ,
+        "TG_API_ID": "1",
+        "TG_API_HASH": "x",
+        "TG_DB_PATH": str(db),
+        "TG_AUDIT_PATH": str(tmp_path / "audit.log"),
+    }
+    commands = [
+        [str(PYTHON), "-m", "tgcli", "folder-edit", "2", "--title", "Ops 2", "--allow-write", "--idempotency-key", "phase62-edit-dry", "--dry-run", "--json"],
+        [str(PYTHON), "-m", "tgcli", "folder-delete", "2", "--allow-write", "--idempotency-key", "phase62-delete-dry", "--dry-run", "--json"],
+        [str(PYTHON), "-m", "tgcli", "folder-add-chat", "2", "@alpha_forum", "--allow-write", "--idempotency-key", "phase62-add-dry", "--dry-run", "--json"],
+        [str(PYTHON), "-m", "tgcli", "folder-remove-chat", "2", "@alpha_forum", "--allow-write", "--idempotency-key", "phase62-remove-dry", "--dry-run", "--json"],
+        [str(PYTHON), "-m", "tgcli", "folders-reorder", "2", "3", "--allow-write", "--idempotency-key", "phase62-reorder-dry", "--dry-run", "--json"],
+    ]
+    for command in commands:
+        result = _subprocess.run(
+            command,
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode == 0, f"command: {command} stderr: {result.stderr}"
+        payload = _json.loads(result.stdout)
+        assert payload["ok"] is True
+        assert payload["data"]["dry_run"] is True
