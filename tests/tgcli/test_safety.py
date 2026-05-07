@@ -11,8 +11,10 @@ from tgcli.safety import (
     NeedsConfirm,
     RateLimiter,
     WriteDisallowed,
+    audit_pre,
     audit_write,
     require_confirm,
+    require_explicit_or_fuzzy,
     require_write_allowed,
 )
 
@@ -103,3 +105,45 @@ def test_audit_write_appends_jsonl(tmp_path: Path):
     assert e1["result"] == "ok"
     assert "ts" in e1
     assert e2["error_code"] == "NOT_FOUND"
+
+
+def test_require_explicit_or_fuzzy_allows_integer_selector():
+    require_explicit_or_fuzzy(make_args(), "12345")
+
+
+def test_require_explicit_or_fuzzy_allows_username_selector():
+    require_explicit_or_fuzzy(make_args(), "@alpha")
+
+
+def test_require_explicit_or_fuzzy_rejects_title_without_flag():
+    with pytest.raises(BadArgs, match="pass --fuzzy"):
+        require_explicit_or_fuzzy(make_args(), "Alpha Chat")
+
+
+def test_require_explicit_or_fuzzy_allows_title_with_flag():
+    args = make_args()
+    args.fuzzy = True
+    require_explicit_or_fuzzy(args, "Alpha Chat")
+
+
+def test_audit_pre_appends_before_entry(tmp_path: Path):
+    log = tmp_path / "audit.log"
+    audit_pre(
+        log,
+        cmd="send",
+        request_id="req-pre",
+        resolved_chat_id=123,
+        resolved_chat_title="Alpha",
+        payload_preview={"text": "hello"},
+        telethon_method="client.send_message",
+        dry_run=False,
+    )
+
+    entry = json.loads(log.read_text().splitlines()[0])
+    assert entry["phase"] == "before"
+    assert entry["cmd"] == "send"
+    assert entry["request_id"] == "req-pre"
+    assert entry["resolved_chat_id"] == 123
+    assert entry["payload_preview"] == {"text": "hello"}
+    assert entry["telethon_method"] == "client.send_message"
+    assert entry["dry_run"] is False

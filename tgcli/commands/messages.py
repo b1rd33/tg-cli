@@ -21,16 +21,27 @@ from telethon.tl.types import (
     MessageMediaWebPage,
     User,
 )
+from telethon.tl.functions.messages import SendReactionRequest
+from telethon.tl.types import ReactionEmoji
 
 from tgcli.client import make_client
 from tgcli.commands._common import (
     AUDIT_PATH, DB_PATH, MEDIA_DIR, ROOT, SESSION_PATH, add_output_flags,
-    decode_raw_json,
+    add_write_flags, decode_raw_json,
 )
 from tgcli.db import connect, connect_readonly
 from tgcli.dispatch import run_command
+from tgcli.idempotency import lookup as lookup_idempotency
+from tgcli.idempotency import record as record_idempotency
 from tgcli.resolve import NotFound, resolve_chat_db
-from tgcli.safety import BadArgs
+from tgcli.safety import (
+    BadArgs,
+    LocalRateLimited,
+    OUTBOUND_WRITE_LIMITER,
+    audit_pre,
+    require_explicit_or_fuzzy,
+    require_write_allowed,
+)
 
 
 def register(sub: argparse._SubParsersAction) -> None:
@@ -74,6 +85,63 @@ def register(sub: argparse._SubParsersAction) -> None:
     gm.add_argument("message_id", type=int, help="Cached Telegram message id")
     add_output_flags(gm)
     gm.set_defaults(func=run_get)
+
+    snd = sub.add_parser("send", help="Send a text message")
+    snd.add_argument("chat", help="Chat id, @username, or fuzzy title with --fuzzy")
+    snd.add_argument("text", help="Message text, or '-' to read from stdin")
+    snd.add_argument("--reply-to", type=int, default=None,
+                     help="Reply to this Telegram message id")
+    snd.add_argument("--silent", action="store_true",
+                     help="Send without notification")
+    snd.add_argument("--no-webpage", action="store_true",
+                     help="Disable link preview")
+    add_write_flags(snd, destructive=False)
+    add_output_flags(snd)
+    snd.set_defaults(func=run_send)
+
+    edit = sub.add_parser("edit-msg", help="Edit one of your own text messages")
+    edit.add_argument("chat", help="Chat id, @username, or fuzzy title with --fuzzy")
+    edit.add_argument("message_id", type=int, help="Telegram message id to edit")
+    edit.add_argument("text", help="Replacement text, or '-' to read from stdin")
+    add_write_flags(edit, destructive=False)
+    add_output_flags(edit)
+    edit.set_defaults(func=run_edit_msg)
+
+    fwd = sub.add_parser("forward", help="Forward one cached message")
+    fwd.add_argument("from_chat", help="Source chat id, @username, or fuzzy title with --fuzzy")
+    fwd.add_argument("message_id", type=int, help="Telegram message id to forward")
+    fwd.add_argument("to_chat", help="Destination chat id, @username, or fuzzy title with --fuzzy")
+    add_write_flags(fwd, destructive=False)
+    add_output_flags(fwd)
+    fwd.set_defaults(func=run_forward)
+
+    pin = sub.add_parser("pin-msg", help="Pin a message")
+    pin.add_argument("chat", help="Chat id, @username, or fuzzy title with --fuzzy")
+    pin.add_argument("message_id", type=int, help="Telegram message id to pin")
+    add_write_flags(pin, destructive=False)
+    add_output_flags(pin)
+    pin.set_defaults(func=run_pin_msg)
+
+    unpin = sub.add_parser("unpin-msg", help="Unpin a message")
+    unpin.add_argument("chat", help="Chat id, @username, or fuzzy title with --fuzzy")
+    unpin.add_argument("message_id", type=int, help="Telegram message id to unpin")
+    add_write_flags(unpin, destructive=False)
+    add_output_flags(unpin)
+    unpin.set_defaults(func=run_unpin_msg)
+
+    react = sub.add_parser("react", help="Add a reaction to a message")
+    react.add_argument("chat", help="Chat id, @username, or fuzzy title with --fuzzy")
+    react.add_argument("message_id", type=int, help="Telegram message id to react to")
+    react.add_argument("emoji", help="Reaction emoji")
+    add_write_flags(react, destructive=False)
+    add_output_flags(react)
+    react.set_defaults(func=run_react)
+
+    mark = sub.add_parser("mark-read", help="Mark all messages in a chat as read")
+    mark.add_argument("chat", help="Chat id, @username, or fuzzy title with --fuzzy")
+    add_write_flags(mark, destructive=False)
+    add_output_flags(mark)
+    mark.set_defaults(func=run_mark_read)
 
     bf = sub.add_parser("backfill", help="Pull historical messages")
     bf.add_argument("--per-chat", type=int, default=200)
@@ -532,6 +600,468 @@ def run_get(args) -> int:
         human_formatter=_get_human,
         audit_path=AUDIT_PATH,
     )
+
+
+# ---------- text writes ----------
+
+def _read_text_arg(value: str) -> str:
+    text = sys.stdin.read() if value == "-" else value
+    text = text.rstrip("\n")
+    if text.strip() == "":
+        raise BadArgs("Text cannot be empty")
+    return text
+
+
+def _request_id(args) -> str:
+    return getattr(args, "_request_id", "req-direct")
+
+
+def _check_write_rate_limit() -> None:
+    wait = OUTBOUND_WRITE_LIMITER.check()
+    if wait > 0:
+        raise LocalRateLimited("Local outbound write rate limit hit", wait)
+
+
+def _dry_run_envelope(command: str, request_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "dry_run": True,
+        "request_id": request_id,
+        "command": command,
+        "payload": payload,
+    }
+
+
+def _write_result(command: str, request_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "command": command,
+        "request_id": request_id,
+        "data": data,
+        "warnings": [],
+    }
+
+
+def _resolve_write_chat(con, args, raw_selector: str) -> dict[str, Any]:
+    require_explicit_or_fuzzy(args, raw_selector)
+    chat_id, chat_title = resolve_chat_db(con, raw_selector)
+    return {"chat_id": chat_id, "title": chat_title}
+
+
+def _write_human(data: dict) -> None:
+    print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+
+
+def _run_write_command(name: str, args, runner) -> int:
+    return run_command(
+        name,
+        args,
+        runner=lambda: runner(args),
+        human_formatter=_write_human,
+        audit_path=AUDIT_PATH,
+    )
+
+
+async def _send_runner(args) -> dict[str, Any]:
+    command = "send"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    text = _read_text_arg(args.text)
+
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+
+        chat = _resolve_write_chat(con, args, args.chat)
+        payload = {
+            "chat": chat,
+            "text": text,
+            "reply_to": args.reply_to,
+            "silent": bool(args.silent),
+            "link_preview": not bool(args.no_webpage),
+            "telethon_method": "client.send_message",
+        }
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=chat["chat_id"],
+            resolved_chat_title=chat["title"],
+            payload_preview=payload,
+            telethon_method="client.send_message",
+            dry_run=False,
+        )
+
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            entity = await client.get_entity(chat["chat_id"])
+            sent = await client.send_message(
+                entity,
+                text,
+                reply_to=args.reply_to,
+                silent=bool(args.silent),
+                link_preview=not bool(args.no_webpage),
+            )
+            data = {
+                "chat": chat,
+                "message_id": int(sent.id),
+                "text": text,
+                "idempotent_replay": False,
+            }
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+def run_send(args) -> int:
+    return _run_write_command("send", args, _send_runner)
+
+
+async def _edit_msg_runner(args) -> dict[str, Any]:
+    command = "edit-msg"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    text = _read_text_arg(args.text)
+
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+        chat = _resolve_write_chat(con, args, args.chat)
+        payload = {
+            "chat": chat,
+            "message_id": int(args.message_id),
+            "text": text,
+            "telethon_method": "client.edit_message",
+        }
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=chat["chat_id"],
+            resolved_chat_title=chat["title"],
+            payload_preview=payload,
+            telethon_method="client.edit_message",
+            dry_run=False,
+        )
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            entity = await client.get_entity(chat["chat_id"])
+            edited = await client.edit_message(entity, int(args.message_id), text)
+            data = {
+                "chat": chat,
+                "message_id": int(getattr(edited, "id", args.message_id)),
+                "text": text,
+                "idempotent_replay": False,
+            }
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+def run_edit_msg(args) -> int:
+    return _run_write_command("edit-msg", args, _edit_msg_runner)
+
+
+async def _forward_runner(args) -> dict[str, Any]:
+    command = "forward"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+        from_chat = _resolve_write_chat(con, args, args.from_chat)
+        to_chat = _resolve_write_chat(con, args, args.to_chat)
+        payload = {
+            "from_chat": from_chat,
+            "to_chat": to_chat,
+            "message_id": int(args.message_id),
+            "telethon_method": "client.forward_messages",
+        }
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=to_chat["chat_id"],
+            resolved_chat_title=to_chat["title"],
+            payload_preview=payload,
+            telethon_method="client.forward_messages",
+            dry_run=False,
+        )
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            from_entity = await client.get_entity(from_chat["chat_id"])
+            to_entity = await client.get_entity(to_chat["chat_id"])
+            forwarded = await client.forward_messages(
+                to_entity,
+                messages=int(args.message_id),
+                from_peer=from_entity,
+            )
+            data = {
+                "from_chat": from_chat,
+                "to_chat": to_chat,
+                "source_message_id": int(args.message_id),
+                "message_id": int(forwarded.id),
+                "idempotent_replay": False,
+            }
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+def run_forward(args) -> int:
+    return _run_write_command("forward", args, _forward_runner)
+
+
+async def _pin_state_runner(args, *, command: str, pinned: bool) -> dict[str, Any]:
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+        chat = _resolve_write_chat(con, args, args.chat)
+        method = "client.pin_message" if pinned else "client.unpin_message"
+        payload = {
+            "chat": chat,
+            "message_id": int(args.message_id),
+            "pinned": pinned,
+            "telethon_method": method,
+        }
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=chat["chat_id"],
+            resolved_chat_title=chat["title"],
+            payload_preview=payload,
+            telethon_method=method,
+            dry_run=False,
+        )
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            entity = await client.get_entity(chat["chat_id"])
+            if pinned:
+                await client.pin_message(entity, int(args.message_id))
+            else:
+                await client.unpin_message(entity, int(args.message_id))
+            data = {
+                "chat": chat,
+                "message_id": int(args.message_id),
+                "pinned": pinned,
+                "idempotent_replay": False,
+            }
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+async def _pin_msg_runner(args) -> dict[str, Any]:
+    return await _pin_state_runner(args, command="pin-msg", pinned=True)
+
+
+def run_pin_msg(args) -> int:
+    return _run_write_command("pin-msg", args, _pin_msg_runner)
+
+
+async def _unpin_msg_runner(args) -> dict[str, Any]:
+    return await _pin_state_runner(args, command="unpin-msg", pinned=False)
+
+
+def run_unpin_msg(args) -> int:
+    return _run_write_command("unpin-msg", args, _unpin_msg_runner)
+
+
+async def _react_runner(args) -> dict[str, Any]:
+    command = "react"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    if str(args.emoji).strip() == "":
+        raise BadArgs("Emoji cannot be empty")
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+        chat = _resolve_write_chat(con, args, args.chat)
+        payload = {
+            "chat": chat,
+            "message_id": int(args.message_id),
+            "emoji": args.emoji,
+            "telethon_method": "SendReactionRequest",
+        }
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=chat["chat_id"],
+            resolved_chat_title=chat["title"],
+            payload_preview=payload,
+            telethon_method="SendReactionRequest",
+            dry_run=False,
+        )
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            entity = await client.get_entity(chat["chat_id"])
+            await client(
+                SendReactionRequest(
+                    peer=entity,
+                    msg_id=int(args.message_id),
+                    reaction=[ReactionEmoji(emoticon=args.emoji)],
+                )
+            )
+            data = {
+                "chat": chat,
+                "message_id": int(args.message_id),
+                "emoji": args.emoji,
+                "idempotent_replay": False,
+            }
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+def run_react(args) -> int:
+    return _run_write_command("react", args, _react_runner)
+
+
+async def _mark_read_runner(args) -> dict[str, Any]:
+    command = "mark-read"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+        chat = _resolve_write_chat(con, args, args.chat)
+        payload = {
+            "chat": chat,
+            "telethon_method": "client.send_read_acknowledge",
+        }
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=chat["chat_id"],
+            resolved_chat_title=chat["title"],
+            payload_preview=payload,
+            telethon_method="client.send_read_acknowledge",
+            dry_run=False,
+        )
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            entity = await client.get_entity(chat["chat_id"])
+            await client.send_read_acknowledge(entity)
+            data = {
+                "chat": chat,
+                "marked_read": True,
+                "idempotent_replay": False,
+            }
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+def run_mark_read(args) -> int:
+    return _run_write_command("mark-read", args, _mark_read_runner)
 
 
 # ---------- backfill ----------

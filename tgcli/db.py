@@ -65,6 +65,14 @@ CREATE TABLE IF NOT EXISTS tg_me (
     cached_at    TEXT,
     raw_json     TEXT
 );
+
+CREATE TABLE IF NOT EXISTS tg_idempotency (
+    key         TEXT PRIMARY KEY,
+    command     TEXT NOT NULL,
+    request_id  TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
 """
 
 

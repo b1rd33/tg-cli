@@ -96,6 +96,7 @@ def run_command(
 ) -> int:
     """Run a command and return its process exit code."""
     request_id = new_request_id()
+    setattr(args, "_request_id", request_id)
     json_mode = _resolve_json_mode(args)
 
     try:

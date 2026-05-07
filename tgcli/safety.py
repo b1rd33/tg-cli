@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from collections import deque
 from datetime import datetime, timezone
@@ -53,6 +54,26 @@ def require_confirm(args, action: str) -> None:
     )
 
 
+_EXPLICIT_INT_RE = re.compile(r"^[+-]?\d+$")
+
+
+def _is_explicit_chat_selector(raw_selector: str) -> bool:
+    value = str(raw_selector).strip()
+    return bool(_EXPLICIT_INT_RE.fullmatch(value) or (value.startswith("@") and len(value) > 1))
+
+
+def require_explicit_or_fuzzy(args, raw_selector: str) -> None:
+    """Require --fuzzy before a write command may use title-based chat resolution."""
+    if _is_explicit_chat_selector(raw_selector):
+        return
+    if getattr(args, "fuzzy", False):
+        return
+    raise BadArgs(
+        f"{raw_selector!r} looks like a fuzzy title match; pass --fuzzy to allow it "
+        "for write operations, or use the chat_id directly."
+    )
+
+
 class RateLimiter:
     """Sliding-window in-process rate limiter.
 
@@ -73,6 +94,37 @@ class RateLimiter:
             return self.window - (now - self.events[0])
         self.events.append(now)
         return 0.0
+
+
+OUTBOUND_WRITE_LIMITER = RateLimiter(max_per_window=20, window_seconds=60.0)
+
+
+def audit_pre(
+    audit_path: Path,
+    *,
+    cmd: str,
+    request_id: str,
+    resolved_chat_id: int,
+    resolved_chat_title: str,
+    payload_preview: dict[str, Any],
+    telethon_method: str,
+    dry_run: bool,
+) -> None:
+    """Append the pre-call write audit entry."""
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "phase": "before",
+        "cmd": cmd,
+        "request_id": request_id,
+        "resolved_chat_id": resolved_chat_id,
+        "resolved_chat_title": resolved_chat_title,
+        "telethon_method": telethon_method,
+        "payload_preview": payload_preview,
+        "dry_run": dry_run,
+    }
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    with audit_path.open("a") as f:
+        f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
 
 
 def audit_write(

@@ -33,16 +33,15 @@ def add_output_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def add_write_flags(parser: argparse.ArgumentParser, *, destructive: bool = False) -> None:
-    """Write-side gates. Phase 5+ commands attach these; Phase 2 ships them ready.
-
-    `--allow-write` is required for any TG-side write.
-    `--confirm` is additionally required for destructive ops (delete/leave/block).
-    `--dry-run` prints what would happen and exits before calling Telegram.
-    """
+    """Write-side gates for Telegram-side mutations."""
     parser.add_argument("--allow-write", action="store_true",
-                        help="Required for any Telegram write (TG_ALLOW_WRITE=1 also works)")
+                        help="Required for any Telegram write")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Print intent and exit before calling Telegram")
+                        help="Print resolved payload and exit before calling Telegram")
+    parser.add_argument("--idempotency-key", default=None,
+                        help="Return a cached result when this write key was already completed")
+    parser.add_argument("--fuzzy", action="store_true",
+                        help="Allow title-based fuzzy chat resolution for this write")
     if destructive:
         parser.add_argument("--confirm", action="store_true",
                             help="Required in addition to --allow-write for destructive ops")
