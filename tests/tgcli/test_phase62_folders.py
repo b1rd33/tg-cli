@@ -450,6 +450,19 @@ def test_folders_reorder_uses_order_request_and_replays(monkeypatch, tmp_path):
 
         async def __call__(self, request):
             self.requests.append(request)
+            from telethon.tl.functions.messages import GetDialogFiltersRequest
+            from telethon.tl.types import (DialogFilter, DialogFilterDefault,
+                                            TextWithEntities)
+            if isinstance(request, GetDialogFiltersRequest):
+                return type("DF", (), {"filters": [
+                    DialogFilterDefault(),
+                    DialogFilter(id=2, title=TextWithEntities(text="A", entities=[]),
+                                 pinned_peers=[], include_peers=[], exclude_peers=[]),
+                    DialogFilter(id=3, title=TextWithEntities(text="B", entities=[]),
+                                 pinned_peers=[], include_peers=[], exclude_peers=[]),
+                    DialogFilter(id=4, title=TextWithEntities(text="C", entities=[]),
+                                 pinned_peers=[], include_peers=[], exclude_peers=[]),
+                ]})()
             return True
 
         async def disconnect(self):
@@ -464,6 +477,9 @@ def test_folders_reorder_uses_order_request_and_replays(monkeypatch, tmp_path):
 
     assert first["order"] == [2, 3, 4]
     assert second["idempotent_replay"] is True
-    assert len(fake.requests) == 1
-    assert fake.requests[0].__class__.__name__ == "UpdateDialogFiltersOrderRequest"
-    assert fake.requests[0].order == [2, 3, 4]
+    # Two requests on first call (GetDialogFilters validation + UpdateDialogFiltersOrder),
+    # zero on second call (replay):
+    update_calls = [r for r in fake.requests
+                    if r.__class__.__name__ == "UpdateDialogFiltersOrderRequest"]
+    assert len(update_calls) == 1
+    assert update_calls[0].order == [2, 3, 4]

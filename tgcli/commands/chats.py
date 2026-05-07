@@ -910,6 +910,15 @@ async def _folders_reorder_runner(args) -> dict[str, Any]:
         client = make_client(SESSION_PATH)
         await client.start()
         try:
+            existing = _folders_from_result(await client(GetDialogFiltersRequest()))
+            existing_ids = {_folder_id(f) for f in existing
+                            if not isinstance(f, DialogFilterDefault)
+                            and _folder_id(f) > 0}
+            if set(order) != existing_ids:
+                raise BadArgs(
+                    f"supplied ids {sorted(order)} must exactly match existing "
+                    f"folder ids {sorted(existing_ids)}"
+                )
             await client(UpdateDialogFiltersOrderRequest(order=order))
             data = {"order": order, "reordered": True, "idempotent_replay": False}
             record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
