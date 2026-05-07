@@ -4,10 +4,43 @@
 
 **Date:** 2026-05-08
 **Author:** Claude (in main session, after spawning blocked codex-rescue agent)
-**Status:** Final — opinionated, ready to execute
-**Prerequisite:** Phase 9 destructive commands merged on main (`ab7be45`); 202 tests passing.
+**Status:** Phase 10 ✅ done locally (`8bb4a43`, tagged `v0.1.0`); awaiting GitHub push + PyPI publish + Phase 11
 
 **Strategy:** Quiet release. Goal is "make it correctly public so Sedex (separate repo) can `pip install tg-cli`, and people can find it via search". **No marketing, no Show HN, no Reddit announcements.** If the project finds users organically, great. If not, no harm done — it's still useful for personal use and as a Sedex dependency.
+
+## Status board (live)
+
+| Item | Status | Notes |
+|---|---|---|
+| **Phase 10 — local artifacts** | ✅ done | commit `8bb4a43`, tag `v0.1.0` |
+| LICENSE (MIT) | ✅ | 21 lines |
+| pyproject.toml (hatchling) | ✅ | 101 lines |
+| CHANGELOG.md | ✅ | 67 lines, retroactive Phases 1–9 |
+| README.md | ✅ rewrite | 164 lines |
+| .github/workflows/ci.yml | ✅ | 30 lines |
+| .github/workflows/release.yml | ✅ | 29 lines |
+| ruff baseline + RUF043 fix | ✅ | 48 files reformatted |
+| `python -m build` | ✅ | wheel + sdist in dist/ |
+| `twine check dist/*` | ✅ | both PASSED |
+| Smoke install in fresh venv | ✅ | `tg --help` works |
+| 202 tests | ✅ | all passing (1 known-flaky session-lock test) |
+| **Git author email** | ✅ kept as `christian@tabulara.de` | Owner's decision: real email is fine for public OSS |
+| **Create GitHub repo** | ❌ pending | `b1rd33/tg-cli` not yet created |
+| **`git push origin main`** | ❌ pending | once repo exists |
+| **PyPI Trusted Publisher** | ❌ pending | manual one-time setup |
+| **`git push origin v0.1.0`** | ❌ pending | triggers PyPI publish + GitHub release |
+| **Phase 11 — SDK** | ⏳ deferred | trigger when Sedex starts |
+| **Phase 12 — media** | ⏳ optional | only if wanted |
+| **Phase 13 — admin** | ⏳ optional | only if wanted |
+| **Phase 14 — v1.0.0** | ⏳ optional | symbolic bump |
+
+## Lessons from Phase 10 execution
+
+The codex agent deviated mid-execution: when its sandbox couldn't fetch `hatchling`, it built a custom 150-line `_tg_build_backend.py` instead of failing or asking. The user reverted to the planned hatchling backend, deleted the custom file, and rebuilt cleanly.
+
+Takeaway for future agent dispatches:
+- Plans should explicitly say "if a sandbox/network issue blocks a planned dependency, STOP and report — do not invent alternatives".
+- Codex agents may run silently and exit without committing; `git status` after dispatch is mandatory before assuming work landed.
 
 ## Executive summary
 
@@ -862,14 +895,22 @@ If users find the project organically and open issues / PRs, respond at your pac
 
 ## Phase order summary
 
-**Strategy: quiet release. Do Phase 10 immediately. Do Phase 11 when Sedex needs the SDK. Phases 12/13 are optional — only if you personally want the features.**
+**Status as of 2026-05-08: Phase 10 done locally. Push to GitHub + PyPI Trusted Publisher setup is the remaining manual step.**
 
 ```
-Phase 10  (~3-4 hrs)   → v0.1.0   public on PyPI + GitHub  ← do this first
-Phase 11  (~1 day)     → v0.2.0   SDK for Sedex            ← do when Sedex needs it
+Phase 10  ✅ done       v0.1.0   commit 8bb4a43, tag v0.1.0, dist/ built
+   ↓ next: 4 manual steps (~15 min total)
+   1. Create empty repo at github.com/b1rd33/tg-cli (no README/LICENSE — they exist locally)
+   2. git remote add origin https://github.com/b1rd33/tg-cli.git && git push -u origin main
+   3. Configure PyPI Trusted Publisher: tg-cli ↔ b1rd33/tg-cli, workflow release.yml
+   4. git push origin v0.1.0   # triggers release.yml → PyPI + GitHub release
+
+Phase 11  (~1 day)     → v0.2.0   SDK for Sedex            ← when Sedex starts
 Phase 12  (~1 day)     → v0.3.0   media upload             ← optional
 Phase 13  (~1-2 days)  → v0.4.0   channel/group admin      ← optional
 Phase 14  (skip-able)  → v1.0.0   API stable bump          ← skip if you stay on 0.x
 ```
 
-Minimum to "public": **Phase 10 only, ~3-4 hours.** Everything else is on-demand.
+The 4 manual steps cannot be automated by an agent (they require GitHub web auth + PyPI web auth). Do them yourself when you're ready.
+
+After Phase 10 is *fully* public (push complete, PyPI publish succeeded), pause until you actually need Phase 11. The SDK extraction matters only when Sedex starts; until then the project is feature-complete enough.

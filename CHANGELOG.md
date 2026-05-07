@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-08
+
+### Added - Phase 11: SDK extraction
+- `from tgcli import Client` — Python SDK for embedding tg-cli in
+  external Python apps; namespace surface (`messages`, `chats`,
+  `topics`, `folders`, `contacts`, `media`, `accounts`, `admin`) plus
+  `c.me()` and `c.stats()` at the top level
+- Wired methods (v0.4.0): `c.me()`, `c.stats()`, `c.messages.show()`,
+  `c.messages.send()`, `c.admin.chat_title()`. Remaining runners stay
+  CLI-only and can be added on demand
+- Same safety gates as the CLI: `allow_write=True` required on writes,
+  typed `confirm=<id>` on destructive ops, `WriteDisallowed` raised on
+  bypass attempts
+- Single-account-per-process: `Client(account=X)` validates against the
+  account frozen at import time and raises `RuntimeError` on mismatch
+- Wrapper-not-rewrite: existing 62 CLI runners untouched, all 235
+  prior tests still pass + 11 new SDK tests
+
 ## [0.3.0] - 2026-05-08
 
 ### Added - Phase 13: Channel/group admin commands
@@ -86,7 +104,8 @@ Telegram operations.
   `account-sessions`, `terminate-session`
 - Typed `--confirm <id>` matched against resolved chat/user/session id
 
-[Unreleased]: https://github.com/b1rd33/tg-cli/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/b1rd33/tg-cli/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/b1rd33/tg-cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/b1rd33/tg-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/b1rd33/tg-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/b1rd33/tg-cli/releases/tag/v0.1.0
