@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-08
+
+### Added - Phase 13: Channel/group admin commands
+- `chat-title`, `chat-photo`, `chat-description`
+- `promote`, `demote`, `ban-from-chat`, `kick`, `unban-from-chat`
+- `set-permissions` with multi-flag permissions and `--review`
+- `chat-invite-link` for invite generation and revocation
+- `chat-pinned-list` and `chat-members` read commands
+- Typed `--confirm <chat-id>` for destructive admin operations, plus affected-user
+  pre-call audit payloads
+
 ## [0.2.0] - 2026-05-08
 
 Phase 11 SDK extraction is deferred. Phase 12 media upload commands take the
@@ -75,6 +86,7 @@ Telegram operations.
   `account-sessions`, `terminate-session`
 - Typed `--confirm <id>` matched against resolved chat/user/session id
 
-[Unreleased]: https://github.com/b1rd33/tg-cli/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/b1rd33/tg-cli/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/b1rd33/tg-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/b1rd33/tg-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/b1rd33/tg-cli/releases/tag/v0.1.0
