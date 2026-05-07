@@ -44,6 +44,7 @@ COMMAND_MODULES: tuple[str, ...] = (
     "tgcli.commands.events",
     "tgcli.commands.doctor",
     "tgcli.commands.accounts",
+    "tgcli.commands.account",
 )
 
 

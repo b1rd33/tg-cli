@@ -66,8 +66,16 @@ def add_write_flags(parser: argparse.ArgumentParser, *, destructive: bool = Fals
     parser.add_argument("--fuzzy", action="store_true",
                         help="Allow title-based fuzzy chat resolution for this write")
     if destructive:
-        parser.add_argument("--confirm", action="store_true",
-                            help="Required in addition to --allow-write for destructive ops")
+        parser.add_argument(
+            "--confirm",
+            type=str,
+            default=None,
+            help=(
+                "Required for destructive ops. Must equal the resolved "
+                "chat_id / user_id / session_hash (post-resolver). "
+                "Bare --confirm without a value is not accepted."
+            ),
+        )
 
 
 def _chmod_owner_only(path) -> None:

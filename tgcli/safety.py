@@ -58,6 +58,26 @@ def require_write_allowed(args) -> None:
     )
 
 
+def require_typed_confirm(args, *, expected, slot: str) -> None:
+    """Verify --confirm exactly matches the RESOLVED id (string-compared).
+
+    The resolver's output is the source of truth: comparing against the raw
+    user selector would defeat the purpose of typed confirmation. Pass the
+    POST-resolution id (chat_id, user_id, session_hash) as `expected`.
+    """
+    raw = getattr(args, "confirm", None)
+    if raw is None:
+        raise BadArgs(
+            f"destructive op requires --confirm <{slot}>. "
+            f"Pass --confirm {expected} to confirm."
+        )
+    if str(raw).strip() != str(expected).strip():
+        raise BadArgs(
+            f"--confirm value {raw!r} must equal the resolved {slot} {expected}. "
+            f"Pass --confirm {expected} to confirm."
+        )
+
+
 def require_confirm(args, action: str) -> None:
     """Raise NeedsConfirm unless --confirm was passed."""
     if getattr(args, "confirm", False):

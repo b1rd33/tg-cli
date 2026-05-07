@@ -199,6 +199,12 @@ def register(sub: argparse._SubParsersAction) -> None:
     add_output_flags(folders_reorder)
     folders_reorder.set_defaults(func=run_folders_reorder)
 
+    lc = sub.add_parser("leave-chat", help="Leave a group, supergroup, or channel")
+    lc.add_argument("chat", help="Chat selector (id, @username, or fuzzy with --fuzzy)")
+    add_write_flags(lc, destructive=True)
+    add_output_flags(lc)
+    lc.set_defaults(func=run_leave_chat)
+
 
 def _topic_edit_mutations(args) -> dict[str, Any]:
     if getattr(args, "closed", False) and getattr(args, "reopen", False):
@@ -1432,3 +1438,69 @@ def run_chats_info(args) -> int:
         human_formatter=_chats_info_human,
         audit_path=AUDIT_PATH,
     )
+
+
+# ---------- leave-chat (Phase 9) ----------
+
+async def _leave_chat_runner(args) -> dict[str, Any]:
+    from tgcli.safety import require_typed_confirm
+
+    command = "leave-chat"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+
+        chat = _resolve_write_chat(con, args, args.chat)
+        require_typed_confirm(args, expected=chat["chat_id"], slot="chat_id")
+
+        # Refuse self-DM (Saved Messages).
+        me = con.execute("SELECT user_id FROM tg_me WHERE key='self'").fetchone()
+        if me and chat["chat_id"] == me[0]:
+            raise BadArgs("cannot leave Saved Messages (self DM)")
+
+        chat_type = con.execute(
+            "SELECT type FROM tg_chats WHERE chat_id = ?", (chat["chat_id"],)
+        ).fetchone()
+        if chat_type and chat_type[0] in ("user", "bot"):
+            raise BadArgs("cannot leave a 1-on-1 user chat (use delete-msg to clean history)")
+
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, {
+                "chat": chat, "telethon_method": "client.delete_dialog",
+            })
+
+        _check_write_rate_limit()
+        audit_pre(AUDIT_PATH, cmd=command, request_id=request_id,
+                  resolved_chat_id=chat["chat_id"], resolved_chat_title=chat["title"],
+                  payload_preview={"chat": chat},
+                  telethon_method="client.delete_dialog", dry_run=False)
+
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            entity = await client.get_input_entity(chat["chat_id"])
+            await client.delete_dialog(entity)
+            con.execute("UPDATE tg_chats SET left = 1 WHERE chat_id = ?",
+                        (chat["chat_id"],))
+            con.commit()
+            data = {"chat": chat, "left": True,
+                    "telethon_method": "client.delete_dialog",
+                    "idempotent_replay": False}
+            record_idempotency(con, args.idempotency_key, command, request_id,
+                               _write_result(command, request_id, data))
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+def run_leave_chat(args) -> int:
+    return _run_write_command("leave-chat", args, _leave_chat_runner)

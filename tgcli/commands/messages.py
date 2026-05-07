@@ -54,6 +54,8 @@ def register(sub: argparse._SubParsersAction) -> None:
                     help="Number of messages (default 50)")
     sh.add_argument("--reverse", action="store_true",
                     help="Oldest first instead of newest first")
+    sh.add_argument("--include-deleted", action="store_true",
+                    help="Include locally-tombstoned (deleted-for-everyone) messages")
     add_output_flags(sh)
     sh.set_defaults(func=run_show)
 
@@ -64,6 +66,8 @@ def register(sub: argparse._SubParsersAction) -> None:
                     help="Number of messages (default 50)")
     se.add_argument("--case-sensitive", action="store_true",
                     help="Require exact case match after the DB LIKE scan")
+    se.add_argument("--include-deleted", action="store_true",
+                    help="Include locally-tombstoned messages")
     add_output_flags(se)
     se.set_defaults(func=run_search)
 
@@ -77,12 +81,16 @@ def register(sub: argparse._SubParsersAction) -> None:
                     help="Only include messages on or before YYYY-MM-DD")
     ls.add_argument("--reverse", action="store_true",
                     help="Oldest first instead of newest first")
+    ls.add_argument("--include-deleted", action="store_true",
+                    help="Include locally-tombstoned messages")
     add_output_flags(ls)
     ls.set_defaults(func=run_list)
 
     gm = sub.add_parser("get-msg", help="Get one cached message by id")
     gm.add_argument("chat", help="Chat selector resolved from the local DB")
     gm.add_argument("message_id", type=int, help="Cached Telegram message id")
+    gm.add_argument("--include-deleted", action="store_true",
+                    help="Include a locally-tombstoned message if it matches")
     add_output_flags(gm)
     gm.set_defaults(func=run_get)
 
@@ -132,6 +140,16 @@ def register(sub: argparse._SubParsersAction) -> None:
     add_write_flags(unpin, destructive=False)
     add_output_flags(unpin)
     unpin.set_defaults(func=run_unpin_msg)
+
+    dl = sub.add_parser("delete-msg", help="Delete one or more messages from a chat")
+    dl.add_argument("chat", help="Chat selector (id, @username, or fuzzy with --fuzzy)")
+    dl.add_argument("message_ids", type=int, nargs="+", help="One or more message_ids to delete")
+    dl.add_argument("--for-everyone", dest="for_everyone", action="store_true", default=None,
+                    help="Revoke for all participants (default: True if all ids are outgoing)")
+    dl.add_argument("--no-for-everyone", dest="for_everyone", action="store_false")
+    add_write_flags(dl, destructive=True)
+    add_output_flags(dl)
+    dl.set_defaults(func=run_delete_msg)
 
     react = sub.add_parser("react", help="Add a reaction to a message")
     react.add_argument("chat", help="Chat id, @username, or fuzzy title with --fuzzy")
@@ -297,11 +315,12 @@ def _show_runner(args) -> dict[str, Any]:
     chat_id, chat_title = resolve_chat_db(con, raw_selector)
 
     order = "ASC" if args.reverse else "DESC"
+    deleted_clause = "" if getattr(args, "include_deleted", False) else " AND (deleted = 0 OR deleted IS NULL)"
     rows = con.execute(
         f"""
         SELECT date, is_outgoing, text, media_type
         FROM tg_messages
-        WHERE chat_id = ?
+        WHERE chat_id = ?{deleted_clause}
         ORDER BY date {order}
         LIMIT ?
         """,
@@ -456,6 +475,7 @@ def _search_runner(args) -> dict[str, Any]:
             case_clause = " AND instr(text, ?) > 0"
             params.append(query)
         params.append(_positive_limit(args.limit))
+        deleted_clause = "" if getattr(args, "include_deleted", False) else " AND (deleted = 0 OR deleted IS NULL)"
         rows = con.execute(
             f"""
             SELECT message_id, date, is_outgoing, text, media_type
@@ -463,7 +483,7 @@ def _search_runner(args) -> dict[str, Any]:
             WHERE chat_id = ?
               AND text IS NOT NULL
               AND text LIKE ? ESCAPE '\\'
-              {case_clause}
+              {case_clause}{deleted_clause}
             ORDER BY date DESC, message_id DESC
             LIMIT ?
             """,
@@ -525,6 +545,8 @@ def _list_runner(args) -> dict[str, Any]:
             where.append("date <= ?")
             params.append(until)
         params.append(_positive_limit(args.limit))
+        if not getattr(args, "include_deleted", False):
+            where.append("(deleted = 0 OR deleted IS NULL)")
         rows = con.execute(
             f"""
             SELECT message_id, date, is_outgoing, text, media_type
@@ -583,13 +605,14 @@ def _get_runner(args) -> dict[str, Any]:
     con = connect_readonly(DB_PATH)
     try:
         chat_id, chat_title = resolve_chat_db(con, args.chat)
+        deleted_clause = "" if getattr(args, "include_deleted", False) else " AND (deleted = 0 OR deleted IS NULL)"
         row = con.execute(
-            """
+            f"""
             SELECT chat_id, message_id, sender_id, date, text,
                    is_outgoing, reply_to_msg_id, has_media, media_type,
                    media_path, raw_json
             FROM tg_messages
-            WHERE chat_id = ? AND message_id = ?
+            WHERE chat_id = ? AND message_id = ?{deleted_clause}
             """,
             (chat_id, args.message_id),
         ).fetchone()
@@ -1121,6 +1144,95 @@ async def _mark_read_runner(args) -> dict[str, Any]:
 
 def run_mark_read(args) -> int:
     return _run_write_command("mark-read", args, _mark_read_runner)
+
+
+# ---------- delete-msg (Phase 9) ----------
+
+async def _delete_msg_runner(args) -> dict[str, Any]:
+    from tgcli.safety import require_typed_confirm
+
+    command = "delete-msg"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+
+        chat = _resolve_write_chat(con, args, args.chat)
+        require_typed_confirm(args, expected=chat["chat_id"], slot="chat_id")
+
+        # Default for_everyone: revoke if ALL ids are outgoing (cached); else delete-for-me.
+        for_everyone = args.for_everyone
+        if for_everyone is None:
+            placeholders = ",".join("?" * len(args.message_ids))
+            outgoing_count = con.execute(
+                f"SELECT COUNT(*) FROM tg_messages WHERE chat_id=? "
+                f"AND message_id IN ({placeholders}) AND is_outgoing=1",
+                (chat["chat_id"], *args.message_ids),
+            ).fetchone()[0]
+            for_everyone = (outgoing_count == len(args.message_ids))
+
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, {
+                "chat": chat, "message_ids": list(args.message_ids),
+                "for_everyone": for_everyone,
+                "telethon_method": "client.delete_messages",
+            })
+
+        _check_write_rate_limit()
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            entity = await client.get_input_entity(chat["chat_id"])
+            results: list[dict[str, Any]] = []
+            for mid in args.message_ids:
+                audit_pre(
+                    AUDIT_PATH, cmd=command, request_id=request_id,
+                    resolved_chat_id=chat["chat_id"], resolved_chat_title=chat["title"],
+                    payload_preview={"message_id": mid, "for_everyone": for_everyone},
+                    telethon_method="client.delete_messages",
+                    dry_run=False,
+                )
+                try:
+                    await client.delete_messages(entity, [mid], revoke=for_everyone)
+                    if for_everyone:
+                        con.execute(
+                            "UPDATE tg_messages SET deleted = 1 "
+                            "WHERE chat_id = ? AND message_id = ?",
+                            (chat["chat_id"], mid),
+                        )
+                        con.commit()
+                    results.append({"message_id": mid, "ok": True, "deleted": True})
+                except Exception as exc:
+                    results.append({"message_id": mid, "ok": False,
+                                    "error": str(exc),
+                                    "error_code": type(exc).__name__})
+
+            succeeded = sum(1 for r in results if r["ok"])
+            failed = len(results) - succeeded
+            data = {
+                "chat": chat,
+                "for_everyone": for_everyone,
+                "summary": {"total": len(results), "succeeded": succeeded, "failed": failed},
+                "results": results,
+                "idempotent_replay": False,
+            }
+            record_idempotency(con, args.idempotency_key, command, request_id,
+                               _write_result(command, request_id, data))
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+def run_delete_msg(args) -> int:
+    return _run_write_command("delete-msg", args, _delete_msg_runner)
 
 
 # ---------- backfill ----------

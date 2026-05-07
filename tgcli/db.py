@@ -105,3 +105,10 @@ def _migrate(con: sqlite3.Connection) -> None:
     cols = {row[1] for row in con.execute("PRAGMA table_info(tg_messages)").fetchall()}
     if "media_path" not in cols:
         con.execute("ALTER TABLE tg_messages ADD COLUMN media_path TEXT")
+    # Phase 9: tombstones for delete-msg and 'left' marker for leave-chat.
+    if "deleted" not in cols:
+        con.execute("ALTER TABLE tg_messages ADD COLUMN deleted INTEGER DEFAULT 0")
+    chats_cols = {row[1] for row in con.execute("PRAGMA table_info(tg_chats)").fetchall()}
+    if "left" not in chats_cols:
+        con.execute("ALTER TABLE tg_chats ADD COLUMN left INTEGER DEFAULT 0")
+    con.commit()
