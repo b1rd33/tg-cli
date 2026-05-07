@@ -1,46 +1,34 @@
 """`tg stats` — DB summary.
 
-Read-only: queries telegram.sqlite, prints chat / message / contact counts,
-top-10 chats by message volume, and a media-by-type breakdown.
+Read-only: queries telegram.sqlite, returns counts + top-10 chats + media-by-type.
 """
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
-from tgcli.commands._common import DB_PATH
-from tgcli.db import DatabaseMissing, connect_readonly
+from tgcli.commands._common import AUDIT_PATH, DB_PATH, add_output_flags
+from tgcli.db import connect_readonly
+from tgcli.dispatch import run_command
 
 
 def register(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser("stats", help="DB summary")
+    add_output_flags(p)
     p.set_defaults(func=run)
 
 
-def run(args) -> int:
-    try:
-        con = connect_readonly(DB_PATH)
-    except DatabaseMissing:
-        print(f"DB not yet created at {DB_PATH}. Run 'login' then 'backfill'.")
-        return 1
+def _gather() -> dict[str, Any]:
+    con = connect_readonly(DB_PATH)
     chats = con.execute("SELECT COUNT(*) FROM tg_chats").fetchone()[0]
     messages = con.execute("SELECT COUNT(*) FROM tg_messages").fetchone()[0]
     contacts = con.execute("SELECT COUNT(*) FROM tg_contacts").fetchone()[0]
     by_kind = dict(con.execute("SELECT type, COUNT(*) FROM tg_chats GROUP BY type").fetchall())
-
-    size_kb = DB_PATH.stat().st_size // 1024
-    print(f"DB:       {DB_PATH} ({size_kb} KB)")
-    print(f"Chats:    {chats}  ({by_kind})")
-    print(f"Messages: {messages}")
-    print(f"Contacts: {contacts}")
-
     last = con.execute(
-        "SELECT date, chat_id FROM tg_messages WHERE date IS NOT NULL ORDER BY date DESC LIMIT 1"
+        "SELECT date, chat_id FROM tg_messages WHERE date IS NOT NULL "
+        "ORDER BY date DESC LIMIT 1"
     ).fetchone()
-    if last:
-        print(f"Latest:   {last[0]}  (chat_id {last[1]})")
-
-    print("\nTop 10 chats by message count:")
-    rows = con.execute(
+    top_chats = con.execute(
         """
         SELECT c.title, COUNT(*) AS n
         FROM tg_messages m
@@ -50,9 +38,6 @@ def run(args) -> int:
         LIMIT 10
         """
     ).fetchall()
-    for title, n in rows:
-        print(f"  {n:>6}  {title}")
-
     media_rows = con.execute(
         """
         SELECT media_type,
@@ -64,8 +49,46 @@ def run(args) -> int:
         ORDER BY total DESC
         """
     ).fetchall()
-    if media_rows:
+    return {
+        "db_path": str(DB_PATH),
+        "db_kb": DB_PATH.stat().st_size // 1024,
+        "chats": chats,
+        "chats_by_kind": by_kind,
+        "messages": messages,
+        "contacts": contacts,
+        "latest_message": (
+            {"date": last[0], "chat_id": last[1]} if last else None
+        ),
+        "top_chats": [{"title": t, "messages": n} for t, n in top_chats],
+        "media_by_type": [
+            {"type": mtype or "?", "seen": total, "downloaded": dled or 0}
+            for mtype, total, dled in media_rows
+        ],
+    }
+
+
+def _human(data: dict) -> None:
+    print(f"DB:       {data['db_path']} ({data['db_kb']} KB)")
+    print(f"Chats:    {data['chats']}  ({data['chats_by_kind']})")
+    print(f"Messages: {data['messages']}")
+    print(f"Contacts: {data['contacts']}")
+    if data["latest_message"]:
+        lm = data["latest_message"]
+        print(f"Latest:   {lm['date']}  (chat_id {lm['chat_id']})")
+    if data["top_chats"]:
+        print("\nTop 10 chats by message count:")
+        for row in data["top_chats"]:
+            print(f"  {row['messages']:>6}  {row['title']}")
+    if data["media_by_type"]:
         print("\nMedia by type:")
-        for mtype, total, dled in media_rows:
-            print(f"  {(mtype or '?'):>12}  {total:>5} seen, {dled or 0:>5} downloaded")
-    return 0
+        for row in data["media_by_type"]:
+            print(f"  {row['type']:>12}  {row['seen']:>5} seen, {row['downloaded']:>5} downloaded")
+
+
+def run(args) -> int:
+    return run_command(
+        "stats", args,
+        runner=_gather,
+        human_formatter=_human,
+        audit_path=AUDIT_PATH,
+    )

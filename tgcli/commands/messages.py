@@ -7,8 +7,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
 import unicodedata
 from datetime import datetime, timezone
+from typing import Any
 
 from telethon.tl.types import (
     Channel,
@@ -22,8 +24,12 @@ from telethon.tl.types import (
 )
 
 from tgcli.client import make_client
-from tgcli.commands._common import DB_PATH, MEDIA_DIR, ROOT, SESSION_PATH
+from tgcli.commands._common import (
+    AUDIT_PATH, DB_PATH, MEDIA_DIR, ROOT, SESSION_PATH, add_output_flags,
+)
 from tgcli.db import DatabaseMissing, connect, connect_readonly
+from tgcli.dispatch import run_command
+from tgcli.safety import BadArgs
 
 
 def register(sub: argparse._SubParsersAction) -> None:
@@ -36,6 +42,7 @@ def register(sub: argparse._SubParsersAction) -> None:
                     help="Number of messages (default 50)")
     sh.add_argument("--reverse", action="store_true",
                     help="Oldest first instead of newest first")
+    add_output_flags(sh)
     sh.set_defaults(func=run_show)
 
     bf = sub.add_parser("backfill", help="Pull historical messages")
@@ -44,6 +51,7 @@ def register(sub: argparse._SubParsersAction) -> None:
     bf.add_argument("--throttle", type=float, default=1.0)
     bf.add_argument("--download-media", action="store_true",
                     help="Also download photos / voice / video / documents to media/<chat_id>/")
+    add_output_flags(bf)
     bf.set_defaults(func=run_backfill)
 
 
@@ -183,37 +191,33 @@ async def _download_media(client, msg, chat_id: int) -> str | None:
 
 # ---------- show ----------
 
-def run_show(args) -> int:
+def _show_runner(args) -> dict[str, Any]:
     if args.pattern is None and args.chat_id is None:
-        print("Need a pattern or --chat-id. Example: python -m tgcli show Ijadi")
-        return 2
-    try:
-        con = connect_readonly(DB_PATH)
-    except DatabaseMissing:
-        print(f"DB not yet at {DB_PATH}. Run 'backfill' first.")
-        return 1
+        raise BadArgs("Need a pattern or --chat-id. Example: tg show Ijadi")
+
+    con = connect_readonly(DB_PATH)  # raises DatabaseMissing → NOT_FOUND
+
     chat_id = args.chat_id
-    chat_title = None
+    chat_title: str | None = None
 
     if chat_id is None:
         rows = con.execute("SELECT chat_id, title, type FROM tg_chats").fetchall()
         needle = _strip_accents(args.pattern)
         matches = [r for r in rows if needle in _strip_accents(r[1])]
         if not matches:
-            print(f"No chat title contains '{args.pattern}'.")
-            return 4
+            raise DatabaseMissing(f"No chat title contains {args.pattern!r}")
         if len(matches) > 1:
-            print(f"Multiple chats match '{args.pattern}':")
-            for cid, title, kind in matches:
-                print(f"  chat_id={cid:>14}  [{kind:>10}]  {title}")
-            print("\nDisambiguate with --chat-id <id>")
-            return 2
+            preview = "; ".join(f"{cid} [{kind}] {title}" for cid, title, kind in matches[:8])
+            more = f"; +{len(matches) - 8} more" if len(matches) > 8 else ""
+            raise BadArgs(
+                f"Multiple chats match {args.pattern!r}: {preview}{more}. "
+                f"Disambiguate with --chat-id <id>"
+            )
         chat_id, chat_title, _ = matches[0]
     else:
         row = con.execute("SELECT title FROM tg_chats WHERE chat_id=?", (chat_id,)).fetchone()
         if not row:
-            print(f"chat_id {chat_id} not in DB")
-            return 4
+            raise DatabaseMissing(f"chat_id {chat_id} not in DB")
         chat_title = row[0]
 
     order = "ASC" if args.reverse else "DESC"
@@ -228,67 +232,135 @@ def run_show(args) -> int:
         (chat_id, args.limit),
     ).fetchall()
 
-    if not rows:
-        print(f"No messages stored for '{chat_title}' (chat_id {chat_id}).")
-        return 0
+    return {
+        "chat": {"chat_id": chat_id, "title": chat_title},
+        "order": "oldest_first" if args.reverse else "newest_first",
+        "messages": [
+            {
+                "date": date,
+                "is_outgoing": bool(is_out),
+                "text": text or None,
+                "media_type": media,
+            }
+            for date, is_out, text, media in rows
+        ],
+    }
 
-    direction = "oldest first" if args.reverse else "newest first"
-    print(f"=== {chat_title}  ·  chat_id {chat_id}  ·  {len(rows)} messages, {direction} ===\n")
-    for date, is_out, text, media in rows:
-        arrow = "→ you " if is_out else "← them"
-        ts = (date or "")[:19].replace("T", " ")
-        if text:
-            body = text
-        elif media:
-            body = f"[{media}]"
+
+def _show_human(data: dict) -> None:
+    chat = data["chat"]
+    msgs = data["messages"]
+    if not msgs:
+        print(f"No messages stored for '{chat['title']}' (chat_id {chat['chat_id']}).")
+        return
+    direction = "oldest first" if data["order"] == "oldest_first" else "newest first"
+    print(f"=== {chat['title']}  ·  chat_id {chat['chat_id']}  ·  {len(msgs)} messages, {direction} ===\n")
+    for m in msgs:
+        arrow = "→ you " if m["is_outgoing"] else "← them"
+        ts = (m["date"] or "")[:19].replace("T", " ")
+        if m["text"]:
+            body = m["text"]
+        elif m["media_type"]:
+            body = f"[{m['media_type']}]"
         else:
             body = "[empty]"
         print(f"  {ts}  {arrow}  {body}")
-    return 0
+
+
+def run_show(args) -> int:
+    return run_command(
+        "show", args,
+        runner=lambda: _show_runner(args),
+        human_formatter=_show_human,
+        audit_path=AUDIT_PATH,
+    )
 
 
 # ---------- backfill ----------
 
-async def run_backfill(args) -> int:
+async def _backfill_runner(args) -> dict[str, Any]:
     client = make_client(SESSION_PATH)
     await client.start()
     con = connect(DB_PATH)
+    quiet = bool(getattr(args, "json", False))
 
     chat_count = 0
     msg_total = 0
     media_total = 0
+    skipped: list[dict] = []
+    per_chat: list[dict] = []
 
-    async for dialog in client.iter_dialogs():
-        if chat_count >= args.max_chats:
-            break
-        chat_count += 1
-        _upsert_chat(con, dialog.entity)
-        con.commit()
-
-        added = 0
-        media_added = 0
-        try:
-            async for msg in client.iter_messages(dialog.entity, limit=args.per_chat):
-                media_path = None
-                if args.download_media and getattr(msg, "media", None):
-                    media_path = await _download_media(client, msg, dialog.id)
-                    if media_path:
-                        media_added += 1
-                _upsert_message(con, msg, dialog.id, media_path=media_path)
-                added += 1
+    try:
+        async for dialog in client.iter_dialogs():
+            if chat_count >= args.max_chats:
+                break
+            chat_count += 1
+            _upsert_chat(con, dialog.entity)
             con.commit()
-        except Exception as e:
-            print(f"  [{chat_count:>3}/{args.max_chats}] {_display_title(dialog.entity)[:40]:40s}  SKIP ({e})")
-            continue
 
-        msg_total += added
-        media_total += media_added
-        media_note = f", {media_added} media" if args.download_media else ""
-        print(f"  [{chat_count:>3}/{args.max_chats}] {_display_title(dialog.entity)[:40]:40s}  +{added:>4} msgs{media_note}  (running {msg_total})")
-        await asyncio.sleep(args.throttle)
+            added = 0
+            media_added = 0
+            try:
+                async for msg in client.iter_messages(dialog.entity, limit=args.per_chat):
+                    media_path = None
+                    if args.download_media and getattr(msg, "media", None):
+                        media_path = await _download_media(client, msg, dialog.id)
+                        if media_path:
+                            media_added += 1
+                    _upsert_message(con, msg, dialog.id, media_path=media_path)
+                    added += 1
+                con.commit()
+            except Exception as e:
+                title = _display_title(dialog.entity)
+                skipped.append({"chat_id": dialog.id, "title": title, "error": str(e)})
+                if not quiet:
+                    print(f"  [{chat_count:>3}/{args.max_chats}] {title[:40]:40s}  SKIP ({e})", file=sys.stderr)
+                continue
 
-    con.close()
-    await client.disconnect()
-    media_note = f", {media_total} media files" if args.download_media else ""
-    print(f"\nBackfill done: {chat_count} chats, {msg_total} messages{media_note}")
-    return 0
+            msg_total += added
+            media_total += media_added
+            per_chat.append({
+                "chat_id": dialog.id,
+                "title": _display_title(dialog.entity),
+                "messages_added": added,
+                "media_added": media_added,
+            })
+            if not quiet:
+                media_note = f", {media_added} media" if args.download_media else ""
+                print(
+                    f"  [{chat_count:>3}/{args.max_chats}] "
+                    f"{_display_title(dialog.entity)[:40]:40s}  +{added:>4} msgs{media_note}  "
+                    f"(running {msg_total})",
+                    file=sys.stderr,
+                )
+            await asyncio.sleep(args.throttle)
+    finally:
+        con.close()
+        await client.disconnect()
+
+    return {
+        "chats_processed": chat_count,
+        "messages_inserted": msg_total,
+        "media_downloaded": media_total,
+        "skipped": skipped,
+        "per_chat": per_chat,
+    }
+
+
+def _backfill_human(data: dict) -> None:
+    media_note = f", {data['media_downloaded']} media files" if data["media_downloaded"] else ""
+    print(
+        f"\nBackfill done: {data['chats_processed']} chats, "
+        f"{data['messages_inserted']} messages{media_note}"
+    )
+    if data["skipped"]:
+        print(f"  ({len(data['skipped'])} chats skipped due to errors)")
+
+
+def run_backfill(args) -> int:
+    return run_command(
+        "backfill", args,
+        runner=lambda: _backfill_runner(args),
+        human_formatter=_backfill_human,
+        audit_path=AUDIT_PATH,
+    )
