@@ -510,6 +510,35 @@ async def _input_peers_for_chat_ids(client, chat_ids: list[int]) -> list[Any]:
     return peers
 
 
+async def _check_emoticon_persisted(client, folder_id: int, requested_emoticon: str | None) -> list[str]:
+    """Round-trip check: did Telegram store the emoticon we sent?
+
+    Telegram's curated allowlist silently drops most emojis. After write, read
+    the folder back and compare. Returns a warnings list (empty if all good or
+    no emoticon was requested).
+    """
+    if not requested_emoticon:
+        return []
+    try:
+        result = await client(GetDialogFiltersRequest())
+        for folder in _folders_from_result(result):
+            if isinstance(folder, DialogFilterDefault):
+                continue
+            if _folder_id(folder) != folder_id:
+                continue
+            stored = getattr(folder, "emoticon", None) or ""
+            if stored != requested_emoticon:
+                return [
+                    f"Telegram silently dropped emoticon {requested_emoticon!r} "
+                    f"(stored as {stored!r}); only certain emojis are allowed"
+                ]
+            return []
+    except Exception:
+        # Round-trip is best-effort — never let it fail the main operation.
+        pass
+    return []
+
+
 def _next_folder_id(filters: list[Any]) -> int:
     # Telegram reserves filter id 0 ("All chats") and id 1 ("Archive").
     # User-created folders must start at 2.
@@ -606,6 +635,7 @@ async def _folder_create_runner(args) -> dict[str, Any]:
                 flags=_folder_create_flags(args),
             )
             await client(UpdateDialogFilterRequest(id=folder_id, filter=folder))
+            warnings = await _check_emoticon_persisted(client, folder_id, args.emoticon)
             data = {
                 "folder_id": folder_id,
                 "title": title.text,
@@ -613,6 +643,7 @@ async def _folder_create_runner(args) -> dict[str, Any]:
                 "include_peer_count": len(include_peers),
                 "exclude_peer_count": len(exclude_peers),
                 "flags": _folder_flags(folder),
+                "warnings": warnings,
                 "idempotent_replay": False,
             }
             record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
@@ -713,6 +744,9 @@ async def _folder_edit_runner(args) -> dict[str, Any]:
             existing = _ensure_mutable_folder(_matching_folder(filters, int(args.folder_id)), int(args.folder_id))
             folder = await _updated_dialog_filter(client, existing, args, updates)
             await client(UpdateDialogFilterRequest(id=int(args.folder_id), filter=folder))
+            warnings = []
+            if args.emoticon is not None:
+                warnings = await _check_emoticon_persisted(client, int(args.folder_id), args.emoticon)
             data = {
                 "folder_id": int(args.folder_id),
                 "title": _folder_title_text(folder.title),
@@ -720,6 +754,7 @@ async def _folder_edit_runner(args) -> dict[str, Any]:
                 "include_peer_count": len(folder.include_peers),
                 "exclude_peer_count": len(folder.exclude_peers),
                 "flags": _folder_flags(folder),
+                "warnings": warnings,
                 "idempotent_replay": False,
             }
             record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))

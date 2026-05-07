@@ -229,9 +229,11 @@ def test_folder_create_builds_dialog_filter_and_replays_idempotency(monkeypatch,
     assert first["exclude_peer_count"] == 1
     assert second["folder_id"] == 3
     assert second["idempotent_replay"] is True
+    # Three requests: list (for next id) → create → list (emoticon round-trip check).
     assert [request.__class__.__name__ for request in fake.requests] == [
         "GetDialogFiltersRequest",
         "UpdateDialogFilterRequest",
+        "GetDialogFiltersRequest",
     ]
     update = fake.requests[1]
     assert update.id == 3

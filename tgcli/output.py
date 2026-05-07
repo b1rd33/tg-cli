@@ -30,6 +30,7 @@ class ExitCode(enum.IntEnum):
     WRITE_DISALLOWED = 6
     NEEDS_CONFIRM = 7
     LOCAL_RATE_LIMIT = 8
+    PREMIUM_REQUIRED = 9
 
 
 def new_request_id() -> str:

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from telethon.errors import FloodWaitError
+from telethon.errors.rpcerrorlist import PremiumAccountRequiredError
 
 from tgcli.client import MissingCredentials, SessionLocked
 from tgcli.db import DatabaseMissing
@@ -74,6 +75,12 @@ def _classify_exception(exc: BaseException) -> tuple[ExitCode, str, dict[str, An
             ExitCode.FLOOD_WAIT,
             f"Telegram FloodWait: wait {exc.seconds}s",
             {"retry_after_seconds": exc.seconds},
+        )
+    if isinstance(exc, PremiumAccountRequiredError):
+        return (
+            ExitCode.PREMIUM_REQUIRED,
+            "Telegram Premium account required for this action",
+            {"telegram_error": "PREMIUM_ACCOUNT_REQUIRED"},
         )
     return ExitCode.GENERIC, f"{type(exc).__name__}: {exc}", {}
 
