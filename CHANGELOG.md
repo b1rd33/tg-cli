@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-08
+
+Phase 11 SDK extraction is deferred. Phase 12 media upload commands take the
+`0.2.0` version slot.
+
+### Added - Phase 12: Media upload commands
+- `upload-photo`, `upload-voice`, `upload-video`, `upload-document`
+- Shared write safety pipeline: `--allow-write`, `--dry-run`,
+  `--idempotency-key`, write-side `--fuzzy`, and audit logging
+- Magic-byte MIME validation for photos, OGG/Opus voice notes, and videos
+- Upload path safety checks and file size caps via `--max-size-mb`
+
 ## [0.1.0] - 2026-05-08
 
 First public release. 46 commands, 202 tests, full read + write + destructive
@@ -63,5 +75,6 @@ Telegram operations.
   `account-sessions`, `terminate-session`
 - Typed `--confirm <id>` matched against resolved chat/user/session id
 
-[Unreleased]: https://github.com/b1rd33/tg-cli/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/b1rd33/tg-cli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/b1rd33/tg-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/b1rd33/tg-cli/releases/tag/v0.1.0

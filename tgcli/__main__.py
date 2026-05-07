@@ -41,6 +41,7 @@ COMMAND_MODULES: tuple[str, ...] = (
     "tgcli.commands.stats",
     "tgcli.commands.contacts",
     "tgcli.commands.messages",
+    "tgcli.commands.media",
     "tgcli.commands.chats",
     "tgcli.commands.events",
     "tgcli.commands.doctor",
