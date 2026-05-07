@@ -34,8 +34,21 @@ class LocalRateLimited(Exception):
         self.retry_after_seconds = retry_after_seconds
 
 
+def require_writes_not_readonly(args) -> None:
+    """Reject writes when --read-only or TG_READONLY=1 is set."""
+    if getattr(args, "read_only", False) or os.environ.get("TG_READONLY") == "1":
+        raise WriteDisallowed(
+            "Writes blocked: read-only mode active (--read-only / TG_READONLY=1)"
+        )
+
+
 def require_write_allowed(args) -> None:
-    """Raise WriteDisallowed unless --allow-write or TG_ALLOW_WRITE=1."""
+    """Raise WriteDisallowed unless --allow-write or TG_ALLOW_WRITE=1.
+
+    Also enforces --read-only mode — even with --allow-write set, a read-only
+    process refuses to mutate Telegram or local DB.
+    """
+    require_writes_not_readonly(args)
     if getattr(args, "allow_write", False):
         return
     if os.environ.get("TG_ALLOW_WRITE") == "1":
@@ -99,6 +112,34 @@ class RateLimiter:
 OUTBOUND_WRITE_LIMITER = RateLimiter(max_per_window=20, window_seconds=60.0)
 
 
+class RapidSendWatcher:
+    """Detect rapid send patterns (e.g. >5 writes/min) and surface warnings.
+
+    Distinct from RateLimiter: this never blocks. It returns a warning string
+    once the threshold is reached so the runner can log it without aborting.
+    """
+
+    def __init__(self, threshold: int = 5, window_seconds: float = 60.0):
+        self.threshold = threshold
+        self.window = window_seconds
+        self.events: deque[float] = deque()
+
+    def check_and_warn(self) -> str | None:
+        now = time.monotonic()
+        while self.events and now - self.events[0] > self.window:
+            self.events.popleft()
+        self.events.append(now)
+        if len(self.events) >= self.threshold:
+            return (
+                f"rapid send detected: {len(self.events)} writes in last "
+                f"{int(self.window)}s; risk of FloodWait"
+            )
+        return None
+
+
+RAPID_SEND_WATCHER = RapidSendWatcher()
+
+
 def audit_pre(
     audit_path: Path,
     *,
@@ -125,6 +166,8 @@ def audit_pre(
     audit_path.parent.mkdir(parents=True, exist_ok=True)
     with audit_path.open("a") as f:
         f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+    from tgcli.commands._common import _chmod_owner_only
+    _chmod_owner_only(audit_path)
 
 
 def audit_write(
@@ -148,3 +191,5 @@ def audit_write(
     audit_path.parent.mkdir(parents=True, exist_ok=True)
     with audit_path.open("a") as f:
         f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+    from tgcli.commands._common import _chmod_owner_only
+    _chmod_owner_only(audit_path)

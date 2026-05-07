@@ -16,11 +16,34 @@ def _override(env_var: str, default: Path) -> Path:
 
 
 ROOT: Path = Path(__file__).resolve().parent.parent.parent
-DB_PATH: Path = _override("TG_DB_PATH", ROOT / "telegram.sqlite")
-SESSION_PATH: Path = _override("TG_SESSION_PATH", ROOT / "tg.session")
 ENV_PATH: Path = ROOT / ".env"
-MEDIA_DIR: Path = _override("TG_MEDIA_DIR", ROOT / "media")
-AUDIT_PATH: Path = _override("TG_AUDIT_PATH", ROOT / "audit.log")
+
+
+def _resolve_account_paths() -> tuple[str, dict[str, Path]]:
+    """Selection precedence: TG_ACCOUNT env → .current file → "default".
+
+    For "default", attempt one-time migration from root-level files into
+    accounts/default/ so single-account users upgrade transparently.
+    """
+    from tgcli.accounts import (
+        DEFAULT_ACCOUNT,
+        current_account,
+        maybe_migrate_default_from_root,
+        resolve_account_paths,
+    )
+    name = os.environ.get("TG_ACCOUNT") or current_account()
+    if name == DEFAULT_ACCOUNT:
+        maybe_migrate_default_from_root()
+    paths = resolve_account_paths(name)
+    return name, paths
+
+
+_account_name, _account_paths = _resolve_account_paths()
+ACCOUNT: str = _account_name
+DB_PATH: Path = _override("TG_DB_PATH", _account_paths["DB_PATH"])
+SESSION_PATH: Path = _override("TG_SESSION_PATH", _account_paths["SESSION_PATH"])
+MEDIA_DIR: Path = _override("TG_MEDIA_DIR", _account_paths["MEDIA_DIR"])
+AUDIT_PATH: Path = _override("TG_AUDIT_PATH", _account_paths["AUDIT_PATH"])
 
 
 def add_output_flags(parser: argparse.ArgumentParser) -> None:
@@ -45,6 +68,36 @@ def add_write_flags(parser: argparse.ArgumentParser, *, destructive: bool = Fals
     if destructive:
         parser.add_argument("--confirm", action="store_true",
                             help="Required in addition to --allow-write for destructive ops")
+
+
+def _chmod_owner_only(path) -> None:
+    """Best-effort chmod to 0600 (file) / 0700 (dir). Silent on missing path or perm errors."""
+    import stat as _stat
+    p = Path(path)
+    try:
+        if not p.exists():
+            return
+        target = 0o700 if p.is_dir() else 0o600
+        current = _stat.S_IMODE(os.stat(p).st_mode)
+        if current != target:
+            os.chmod(p, target)
+    except (OSError, PermissionError):
+        # Security-best-effort; never fail the operation.
+        pass
+
+
+def _safe_user_path(value: str) -> str:
+    """Reject user-supplied paths that contain SQLite URI metacharacters.
+
+    `?` and `#` would let an attacker inject URI parameters or fragment
+    segments into a sqlite3 connection string. Reject either at any boundary
+    that flows into a path or URI.
+    """
+    from tgcli.safety import BadArgs
+    for ch in ("?", "#"):
+        if ch in value:
+            raise BadArgs(f"path {value!r} contains forbidden character {ch!r}")
+    return value
 
 
 def decode_raw_json(value: str | None):

@@ -1277,6 +1277,8 @@ def run_topic_unpin(args) -> int:
 
 async def _discover_runner(args) -> dict[str, Any]:
     import sys
+    from tgcli.safety import require_writes_not_readonly
+    require_writes_not_readonly(args)
     client = make_client(SESSION_PATH)
     await client.start()
     quiet = bool(getattr(args, "json", False))

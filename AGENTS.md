@@ -1,0 +1,66 @@
+# AGENTS.md — tg-cli
+
+Agent-friendly Telegram CLI built on Telethon. All commands emit a uniform JSON envelope or human output; writes are gated behind `--allow-write`; every invocation logs to `audit.log`.
+
+## Quick reference
+
+- **Read commands:** `stats`, `me`, `show`, `search`, `list-msgs`, `get-msg`, `contacts`, `unread`, `chats-info`, `topics-list`, `folders-list`, `folder-show`
+- **Write commands:** `send`, `edit-msg`, `forward`, `pin-msg`, `unpin-msg`, `react`, `mark-read`, `topic-create`, `topic-edit`, `topic-pin`, `topic-unpin`, `folder-create`, `folder-edit`, `folder-delete`, `folder-add-chat`, `folder-remove-chat`, `folders-reorder`
+- **Local-DB writers:** `sync-contacts`, `discover`, `backfill` (write only to `telegram.sqlite`, not to Telegram)
+- **Live event stream:** `listen`
+- **Auth:** `login`
+- **Health:** `doctor`
+- **Multi-account:** `accounts-add`, `accounts-use`, `accounts-list`, `accounts-show`, `accounts-remove`
+
+## Architectural facts
+
+- Paths are env-overridable: `TG_DB_PATH`, `TG_SESSION_PATH`, `TG_AUDIT_PATH`, `TG_MEDIA_DIR`, `TG_API_ID`, `TG_API_HASH`, `TG_ACCOUNT`, `TG_READONLY`, `TG_ALLOW_WRITE`.
+- Single-process Telethon session lock at `tg.session.lock` via `fcntl.flock`. `--lock-wait DURATION` lets you wait instead of fail-fast.
+- All chat selectors resolve through `resolve_chat_db()` in three strategies: integer chat_id, `@username`, fuzzy title match. Fuzzy matches require `--fuzzy` for any write.
+- Idempotency: every write command accepts `--idempotency-key NAME`. Same key + same command returns the cached envelope without re-calling Telegram.
+- Read-only mode: `--read-only` or `TG_READONLY=1` rejects writes (Telegram-side AND local DB writes).
+- Multi-account: `--account NAME` switches the active account directory at `accounts/<NAME>/`. Default is `default`.
+
+## Exit codes (public contract)
+
+```
+0  OK                  command succeeded
+1  GENERIC             unclassified error
+2  BAD_ARGS            invalid args (or fuzzy-write without --fuzzy)
+3  NOT_AUTHED          TG_API_ID/HASH not set or session expired
+4  NOT_FOUND           chat / message / folder not in DB or server
+5  FLOOD_WAIT          Telegram rate-limited; retry after `retry_after_seconds`
+6  WRITE_DISALLOWED    write attempted without --allow-write (or --read-only mode)
+7  NEEDS_CONFIRM       destructive op without --confirm (Phase 10+)
+8  LOCAL_RATE_LIMIT    in-process write limiter tripped
+9  PREMIUM_REQUIRED    Telegram requires Premium for this action
+```
+
+## Build / test
+
+```
+.venv/bin/pytest tests/tgcli -q     # unit tests
+make gate                            # test + diff-check
+./tg doctor --json                   # diagnose env + cache + (with --live) network
+```
+
+## Conventions
+
+- Conventional Commits: `feat|fix|docs|refactor|test|chore|perf|security|ci(scope): subject`. Optional commit-msg hook at `.githooks/commit-msg`; install via `make install-hooks`.
+- Plans live in `docs/superpowers/plans/YYYY-MM-DD-...md`
+- One commit per plan task on a `feat/phase-N-...` branch; squash-merge to main when phase complete.
+- Audit log is append-only NDJSON at `audit.log`. Pre + post entries share `request_id`.
+
+## Read me first if working on...
+
+- **Adding a write command:** read `tgcli/commands/messages.py`'s `_send_runner` end-to-end. The pipeline is fixed: write gate → read text → idempotency lookup → resolver + fuzzy gate → dry-run short-circuit → rate limit → audit_pre → Telethon → record_idempotency → audit_post.
+- **Adding a read command:** much simpler — just resolve the chat, query SQLite, return data dict.
+- **Telethon API surface:** read the actual installed Telethon at `.venv/lib/python3.12/site-packages/telethon/tl/functions/`. Don't trust outdated docs.
+
+## Gotchas
+
+- Folder emoticons: Telegram has a curated allowlist; non-allowed emojis are silently dropped. `folder-create` round-trips and warns when this happens.
+- Topic edits combining title + close/reopen: Telegram returns TOPIC_CLOSE_SEPARATELY. Runner auto-splits into two requests.
+- Reactions: free accounts can't react in Saved Messages or many groups; `react` returns exit 9 PREMIUM_REQUIRED.
+- Filter ids 0 and 1 are reserved server-side (`All chats`, `Archive`); user-created folders start at id 2.
+- Backfill respects `--max-messages` (default 100k) and `--max-db-size-mb` (default 500); refuses to start if exceeded.

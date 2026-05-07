@@ -43,31 +43,50 @@ def ensure_credentials() -> tuple[int, str]:
     return api_id, api_hash
 
 
-def acquire_session_lock(session_path: Path) -> None:
-    """Take an exclusive flock on <session>.lock. Idempotent within a process."""
+def acquire_session_lock(session_path: Path, *, wait_seconds: float = 0) -> None:
+    """Take an exclusive flock on <session>.lock. Idempotent within a process.
+
+    wait_seconds=0 fails fast (current behavior). Positive value retries
+    every 100ms until acquired or timeout.
+    """
+    import time as _time
     global _lock_handle
     if _lock_handle is not None:
         return
     lock_path = Path(str(session_path) + ".lock")
-    f = lock_path.open("w")
-    try:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError as e:
+    deadline = _time.monotonic() + max(wait_seconds, 0)
+    while True:
+        f = lock_path.open("w")
         try:
-            existing_pid = lock_path.read_text().strip() or "?"
-        except OSError:
-            existing_pid = "?"
-        f.close()
-        raise SessionLocked(
-            f"Another tg process holds the Telethon session (PID {existing_pid}). "
-            f"Wait for it to finish, or kill it with: kill {existing_pid}"
-        ) from e
-    f.write(str(os.getpid()))
-    f.flush()
-    _lock_handle = f
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            f.write(str(os.getpid()))
+            f.flush()
+            _lock_handle = f
+            from tgcli.commands._common import _chmod_owner_only
+            _chmod_owner_only(lock_path)
+            actual_session = Path(str(session_path) + ".session")
+            _chmod_owner_only(actual_session)
+            return
+        except BlockingIOError as e:
+            f.close()
+            if _time.monotonic() >= deadline:
+                try:
+                    existing_pid = lock_path.read_text().strip() or "?"
+                except OSError:
+                    existing_pid = "?"
+                raise SessionLocked(
+                    f"Another tg process holds the Telethon session (PID {existing_pid}). "
+                    f"Wait for it to finish, or kill it with: kill {existing_pid}"
+                ) from e
+            _time.sleep(0.1)
 
 
-def make_client(session_path: Path) -> TelegramClient:
+def make_client(session_path: Path, *, lock_wait: float | None = None) -> TelegramClient:
     api_id, api_hash = ensure_credentials()
-    acquire_session_lock(session_path)
+    if lock_wait is None:
+        try:
+            lock_wait = float(os.environ.get("TG_LOCK_WAIT", "0"))
+        except ValueError:
+            lock_wait = 0
+    acquire_session_lock(session_path, wait_seconds=lock_wait)
     return TelegramClient(str(session_path), api_id, api_hash)

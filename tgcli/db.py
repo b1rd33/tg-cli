@@ -86,6 +86,9 @@ def connect(db_path: Path) -> sqlite3.Connection:
     con.execute("PRAGMA journal_mode=WAL")
     con.executescript(SCHEMA)
     _migrate(con)
+    # Phase 8: owner-only perms on first creation.
+    from tgcli.commands._common import _chmod_owner_only
+    _chmod_owner_only(db_path)
     return con
 
 

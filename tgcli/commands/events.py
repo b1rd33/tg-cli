@@ -30,6 +30,8 @@ def register(sub: argparse._SubParsersAction) -> None:
 
 
 async def _runner(args) -> dict[str, Any]:
+    from tgcli.safety import require_writes_not_readonly
+    require_writes_not_readonly(args)
     client = make_client(SESSION_PATH)
     await client.start()
     con = connect(DB_PATH)

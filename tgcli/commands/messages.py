@@ -151,6 +151,10 @@ def register(sub: argparse._SubParsersAction) -> None:
     bf.add_argument("--per-chat", type=int, default=200)
     bf.add_argument("--max-chats", type=int, default=100)
     bf.add_argument("--throttle", type=float, default=1.0)
+    bf.add_argument("--max-messages", type=int, default=100_000,
+                    help="Refuse to start backfill if cached message count >= this (default 100000)")
+    bf.add_argument("--max-db-size-mb", type=int, default=500,
+                    help="Refuse to start backfill if telegram.sqlite >= this MB (default 500)")
     bf.add_argument("--download-media", action="store_true",
                     help="Also download photos / voice / video / documents to media/<chat_id>/")
     add_output_flags(bf)
@@ -319,6 +323,16 @@ def _show_runner(args) -> dict[str, Any]:
     }
 
 
+def _truncate_human(text: str, *, limit: int = 200) -> str:
+    """Trim text to `limit` chars in human mode unless TG_FULL=1."""
+    import os as _os
+    if _os.environ.get("TG_FULL") == "1":
+        return text
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "…"
+
+
 def _show_human(data: dict) -> None:
     chat = data["chat"]
     msgs = data["messages"]
@@ -331,7 +345,7 @@ def _show_human(data: dict) -> None:
         arrow = "→ you " if m["is_outgoing"] else "← them"
         ts = (m["date"] or "")[:19].replace("T", " ")
         if m["text"]:
-            body = m["text"]
+            body = _truncate_human(m["text"])
         elif m["media_type"]:
             body = f"[{m['media_type']}]"
         else:
@@ -476,7 +490,7 @@ def _search_human(data: dict) -> None:
     for message in data["messages"]:
         ts = (message["date"] or "")[:19].replace("T", " ")
         if message["text"]:
-            body = message["text"]
+            body = _truncate_human(message["text"])
         elif message["media_type"]:
             body = f"[{message['media_type']}]"
         else:
@@ -548,7 +562,7 @@ def _list_human(data: dict) -> None:
         arrow = "you" if message["is_outgoing"] else "them"
         ts = (message["date"] or "")[:19].replace("T", " ")
         if message["text"]:
-            body = message["text"]
+            body = _truncate_human(message["text"])
         elif message["media_type"]:
             body = f"[{message['media_type']}]"
         else:
@@ -1111,10 +1125,40 @@ def run_mark_read(args) -> int:
 
 # ---------- backfill ----------
 
+def _check_backfill_caps(db_path, *, current_msg_count: int, args) -> list[str]:
+    """Raise BadArgs if caps exceeded; return warnings list at 80%+."""
+    warnings: list[str] = []
+    max_msgs = int(getattr(args, "max_messages", 100_000) or 100_000)
+    max_db_mb = int(getattr(args, "max_db_size_mb", 500) or 500)
+    if current_msg_count >= max_msgs:
+        raise BadArgs(
+            f"backfill refused: message count {current_msg_count} >= --max-messages {max_msgs}"
+        )
+    if current_msg_count >= int(max_msgs * 0.8):
+        warnings.append(f"approaching --max-messages cap ({current_msg_count}/{max_msgs})")
+    try:
+        size_bytes = db_path.stat().st_size
+    except OSError:
+        return warnings
+    size_mb = size_bytes / (1024 * 1024)
+    if size_mb >= max_db_mb:
+        raise BadArgs(
+            f"backfill refused: db size {size_mb:.0f}MB >= --max-db-size-mb {max_db_mb}"
+        )
+    if size_mb >= max_db_mb * 0.8:
+        warnings.append(f"approaching --max-db-size-mb cap ({size_mb:.0f}/{max_db_mb}MB)")
+    return warnings
+
+
 async def _backfill_runner(args) -> dict[str, Any]:
+    from tgcli.safety import require_writes_not_readonly
+    require_writes_not_readonly(args)
     client = make_client(SESSION_PATH)
     await client.start()
     con = connect(DB_PATH)
+    # Phase 8: cap check before the heavy work.
+    current_count = con.execute("SELECT COUNT(*) FROM tg_messages").fetchone()[0]
+    cap_warnings = _check_backfill_caps(DB_PATH, current_msg_count=current_count, args=args)
     quiet = bool(getattr(args, "json", False))
 
     chat_count = 0
@@ -1177,6 +1221,7 @@ async def _backfill_runner(args) -> dict[str, Any]:
         "media_downloaded": media_total,
         "skipped": skipped,
         "per_chat": per_chat,
+        "cap_warnings": cap_warnings,
     }
 
 

@@ -5,8 +5,28 @@ import argparse
 import asyncio
 import inspect
 import json
+import os
 import sys
 from importlib import import_module
+
+
+def _pre_parse_account_flag(argv: list[str] | None) -> None:
+    """Set TG_ACCOUNT before any tgcli module is imported.
+
+    Path resolution in tgcli.commands._common runs at import time and reads
+    TG_ACCOUNT, so --account must be propagated before that module loads.
+    """
+    args = list(argv) if argv is not None else sys.argv[1:]
+    for i, tok in enumerate(args):
+        if tok == "--account" and i + 1 < len(args):
+            os.environ["TG_ACCOUNT"] = args[i + 1]
+            return
+        if tok.startswith("--account="):
+            os.environ["TG_ACCOUNT"] = tok.split("=", 1)[1]
+            return
+
+
+_pre_parse_account_flag(None)
 
 from tgcli.commands._common import AUDIT_PATH, ENV_PATH
 from tgcli.env import load_env_file
@@ -22,6 +42,8 @@ COMMAND_MODULES: tuple[str, ...] = (
     "tgcli.commands.messages",
     "tgcli.commands.chats",
     "tgcli.commands.events",
+    "tgcli.commands.doctor",
+    "tgcli.commands.accounts",
 )
 
 
@@ -29,6 +51,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tg",
         description="Telegram agent CLI — read/write/listen against your own Telegram account.",
+    )
+    parser.add_argument(
+        "--read-only",
+        action="store_true",
+        help="Reject any write to Telegram or local DB. Also via TG_READONLY=1.",
+    )
+    parser.add_argument(
+        "--lock-wait",
+        type=float,
+        default=0,
+        help="Seconds to wait for the Telethon session lock (default 0 = fail-fast).",
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Disable column truncation in human-mode output.",
+    )
+    parser.add_argument(
+        "--account",
+        default=None,
+        help="Account name (uses accounts/<NAME>/). Default selected via accounts-use or TG_ACCOUNT env.",
     )
     sub = parser.add_subparsers(dest="cmd")
     for mod_name in COMMAND_MODULES:
@@ -62,6 +105,16 @@ def main(argv: list[str] | None = None) -> int:
     if not args.cmd:
         parser.print_help(sys.stderr)
         return 0
+    # Propagate top-level flags via env so command modules don't need to thread them.
+    if getattr(args, "lock_wait", 0):
+        import os as _os
+        _os.environ["TG_LOCK_WAIT"] = str(args.lock_wait)
+    if getattr(args, "read_only", False):
+        import os as _os
+        _os.environ["TG_READONLY"] = "1"
+    if getattr(args, "full", False):
+        import os as _os
+        _os.environ["TG_FULL"] = "1"
     try:
         result = args.func(args)
         if inspect.iscoroutine(result):

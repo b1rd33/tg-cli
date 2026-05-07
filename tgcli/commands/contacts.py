@@ -132,7 +132,10 @@ def run_list(args) -> int:
 
 # ---------- sync-contacts (writes local DB) ----------
 
-async def _sync_runner() -> dict[str, Any]:
+async def _sync_runner(args=None) -> dict[str, Any]:
+    if args is not None:
+        from tgcli.safety import require_writes_not_readonly
+        require_writes_not_readonly(args)
     client = make_client(SESSION_PATH)
     await client.start()
     try:
@@ -179,7 +182,7 @@ def _sync_human(data: dict) -> None:
 def run_sync(args) -> int:
     return run_command(
         "sync-contacts", args,
-        runner=_sync_runner,
+        runner=lambda: _sync_runner(args),
         human_formatter=_sync_human,
         audit_path=AUDIT_PATH,
     )
