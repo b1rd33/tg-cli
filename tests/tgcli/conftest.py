@@ -1,4 +1,5 @@
 """Shared pytest fixtures for tests/tgcli."""
+
 from __future__ import annotations
 
 import pytest

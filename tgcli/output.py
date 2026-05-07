@@ -9,6 +9,7 @@ Envelope shape (failure):
     {"ok": False, "command": str, "request_id": str,
      "error": {"code": str, "message": str, **extra}}
 """
+
 from __future__ import annotations
 
 import enum

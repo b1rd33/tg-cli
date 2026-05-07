@@ -5,6 +5,7 @@ Resolution order:
 2. @username against cached tg_chats.username.
 3. Case- and accent-insensitive title substring match.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -67,9 +68,7 @@ def resolve_chat_db(con: sqlite3.Connection, raw: str) -> tuple[int, str]:
         raise NotFound(f"username {value} not in DB")
 
     needle = strip_accents(value)
-    rows = con.execute(
-        "SELECT chat_id, title FROM tg_chats ORDER BY chat_id"
-    ).fetchall()
+    rows = con.execute("SELECT chat_id, title FROM tg_chats ORDER BY chat_id").fetchall()
     matches = [
         (int(chat_id), _title_or_id(int(chat_id), title))
         for chat_id, title in rows

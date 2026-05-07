@@ -1,4 +1,5 @@
 """accounts-add | accounts-use | accounts-list | accounts-show | accounts-remove."""
+
 from __future__ import annotations
 
 import argparse
@@ -41,19 +42,24 @@ def register(sub: argparse._SubParsersAction) -> None:
 
 
 def run_add(args) -> int:
-    return run_command("accounts-add", args, runner=lambda: add_account(args.name),
-                       audit_path=AUDIT_PATH)
+    return run_command(
+        "accounts-add", args, runner=lambda: add_account(args.name), audit_path=AUDIT_PATH
+    )
 
 
 def run_use(args) -> int:
-    return run_command("accounts-use", args,
-                       runner=lambda: {"name": use_account(args.name), "current": True},
-                       audit_path=AUDIT_PATH)
+    return run_command(
+        "accounts-use",
+        args,
+        runner=lambda: {"name": use_account(args.name), "current": True},
+        audit_path=AUDIT_PATH,
+    )
 
 
 def run_list(args) -> int:
     def _runner():
         return {"accounts": list_accounts(), "current": current_account()}
+
     return run_command("accounts-list", args, runner=_runner, audit_path=AUDIT_PATH)
 
 
@@ -62,9 +68,11 @@ def run_show(args) -> int:
         cur = current_account()
         paths = resolve_account_paths(cur)
         return {"name": cur, "paths": {k: str(v) for k, v in paths.items()}}
+
     return run_command("accounts-show", args, runner=_runner, audit_path=AUDIT_PATH)
 
 
 def run_remove(args) -> int:
-    return run_command("accounts-remove", args, runner=lambda: remove_account(args.name),
-                       audit_path=AUDIT_PATH)
+    return run_command(
+        "accounts-remove", args, runner=lambda: remove_account(args.name), audit_path=AUDIT_PATH
+    )

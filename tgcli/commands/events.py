@@ -1,4 +1,5 @@
 """Live event subcommands. Phase 1 port: listen."""
+
 from __future__ import annotations
 
 import argparse
@@ -21,16 +22,23 @@ from tgcli.dispatch import run_command
 
 def register(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser("listen", help="Capture new incoming messages forever")
-    p.add_argument("--notify", action="store_true",
-                   help="Echo each incoming message to your own Saved Messages")
-    p.add_argument("--download-media", action="store_true",
-                   help="Also download photos / voice / video / documents to media/<chat_id>/")
+    p.add_argument(
+        "--notify",
+        action="store_true",
+        help="Echo each incoming message to your own Saved Messages",
+    )
+    p.add_argument(
+        "--download-media",
+        action="store_true",
+        help="Also download photos / voice / video / documents to media/<chat_id>/",
+    )
     add_output_flags(p)
     p.set_defaults(func=run_listen)
 
 
 async def _runner(args) -> dict[str, Any]:
     from tgcli.safety import require_writes_not_readonly
+
     require_writes_not_readonly(args)
     client = make_client(SESSION_PATH)
     await client.start()
@@ -85,13 +93,16 @@ async def _runner(args) -> dict[str, Any]:
 
 
 def _human(data: dict) -> None:
-    print(f"\nListener stopped. Seen {data['messages_seen']} messages, "
-          f"{data['media_downloaded']} media downloaded, {data['errors']} errors.")
+    print(
+        f"\nListener stopped. Seen {data['messages_seen']} messages, "
+        f"{data['media_downloaded']} media downloaded, {data['errors']} errors."
+    )
 
 
 def run_listen(args) -> int:
     return run_command(
-        "listen", args,
+        "listen",
+        args,
         runner=lambda: _runner(args),
         human_formatter=_human,
         audit_path=AUDIT_PATH,

@@ -1,4 +1,5 @@
 """Phase 8 — --read-only / TG_READONLY=1 gate."""
+
 from __future__ import annotations
 
 import argparse

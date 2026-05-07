@@ -1,4 +1,5 @@
 """Chat-related subcommands. Phase 1 port: discover."""
+
 from __future__ import annotations
 
 import argparse
@@ -18,7 +19,12 @@ from telethon.tl.functions.messages import (
     UpdateDialogFiltersOrderRequest,
     UpdatePinnedForumTopicRequest,
 )
-from telethon.tl.types import DialogFilter, DialogFilterChatlist, DialogFilterDefault, TextWithEntities
+from telethon.tl.types import (
+    DialogFilter,
+    DialogFilterChatlist,
+    DialogFilterDefault,
+    TextWithEntities,
+)
 
 from tgcli.client import make_client
 from tgcli.commands._common import (
@@ -153,8 +159,12 @@ def register(sub: argparse._SubParsersAction) -> None:
     folder_create = sub.add_parser("folder-create", help="Create a Telegram dialog folder")
     folder_create.add_argument("title", help="Folder title")
     folder_create.add_argument("--emoticon", default=None, help="Folder emoji")
-    folder_create.add_argument("--include-chat", type=int, action="append", default=[], help="Integer chat_id to include")
-    folder_create.add_argument("--exclude-chat", type=int, action="append", default=[], help="Integer chat_id to exclude")
+    folder_create.add_argument(
+        "--include-chat", type=int, action="append", default=[], help="Integer chat_id to include"
+    )
+    folder_create.add_argument(
+        "--exclude-chat", type=int, action="append", default=[], help="Integer chat_id to exclude"
+    )
     _add_folder_create_bool_flags(folder_create)
     add_write_flags(folder_create, destructive=False)
     add_output_flags(folder_create)
@@ -164,10 +174,18 @@ def register(sub: argparse._SubParsersAction) -> None:
     folder_edit.add_argument("folder_id", type=int, help="Folder id")
     folder_edit.add_argument("--title", default=None, help="New folder title")
     folder_edit.add_argument("--emoticon", default=None, help="New folder emoji")
-    folder_edit.add_argument("--clear-include", action="store_true", help="Clear include peers before adding")
-    folder_edit.add_argument("--clear-exclude", action="store_true", help="Clear exclude peers before adding")
-    folder_edit.add_argument("--include-chat", type=int, action="append", default=[], help="Integer chat_id to include")
-    folder_edit.add_argument("--exclude-chat", type=int, action="append", default=[], help="Integer chat_id to exclude")
+    folder_edit.add_argument(
+        "--clear-include", action="store_true", help="Clear include peers before adding"
+    )
+    folder_edit.add_argument(
+        "--clear-exclude", action="store_true", help="Clear exclude peers before adding"
+    )
+    folder_edit.add_argument(
+        "--include-chat", type=int, action="append", default=[], help="Integer chat_id to include"
+    )
+    folder_edit.add_argument(
+        "--exclude-chat", type=int, action="append", default=[], help="Integer chat_id to exclude"
+    )
     _add_folder_edit_bool_flags(folder_edit)
     add_write_flags(folder_edit, destructive=False)
     add_output_flags(folder_edit)
@@ -186,7 +204,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     add_output_flags(folder_add)
     folder_add.set_defaults(func=run_folder_add_chat)
 
-    folder_remove = sub.add_parser("folder-remove-chat", help="Remove a chat from a Telegram dialog folder")
+    folder_remove = sub.add_parser(
+        "folder-remove-chat", help="Remove a chat from a Telegram dialog folder"
+    )
     folder_remove.add_argument("folder_id", type=int, help="Folder id")
     folder_remove.add_argument("chat", help="Chat id, @username, or fuzzy title with --fuzzy")
     add_write_flags(folder_remove, destructive=False)
@@ -194,7 +214,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     folder_remove.set_defaults(func=run_folder_remove_chat)
 
     folders_reorder = sub.add_parser("folders-reorder", help="Reorder Telegram dialog folders")
-    folders_reorder.add_argument("folder_ids", type=int, nargs="+", help="Folder ids in desired order")
+    folders_reorder.add_argument(
+        "folder_ids", type=int, nargs="+", help="Folder ids in desired order"
+    )
     add_write_flags(folders_reorder, destructive=False)
     add_output_flags(folders_reorder)
     folders_reorder.set_defaults(func=run_folders_reorder)
@@ -273,7 +295,9 @@ def _folder_flags(folder) -> dict[str, bool]:
 def _folder_summary(folder) -> dict[str, Any]:
     return {
         "folder_id": _folder_id(folder),
-        "title": "All chats" if isinstance(folder, DialogFilterDefault) else _folder_title_text(getattr(folder, "title", "")),
+        "title": "All chats"
+        if isinstance(folder, DialogFilterDefault)
+        else _folder_title_text(getattr(folder, "title", "")),
         "emoticon": getattr(folder, "emoticon", None),
         "type": _folder_type(folder),
         "is_default": isinstance(folder, DialogFilterDefault) or _folder_id(folder) == 0,
@@ -442,9 +466,15 @@ def _peer_summary(con, peer) -> dict[str, Any]:
 
 def _folder_detail(folder, con) -> dict[str, Any]:
     summary = _folder_summary(folder)
-    summary["pinned_peers"] = [_peer_summary(con, peer) for peer in (getattr(folder, "pinned_peers", None) or [])]
-    summary["include_peers"] = [_peer_summary(con, peer) for peer in (getattr(folder, "include_peers", None) or [])]
-    summary["exclude_peers"] = [_peer_summary(con, peer) for peer in (getattr(folder, "exclude_peers", None) or [])]
+    summary["pinned_peers"] = [
+        _peer_summary(con, peer) for peer in (getattr(folder, "pinned_peers", None) or [])
+    ]
+    summary["include_peers"] = [
+        _peer_summary(con, peer) for peer in (getattr(folder, "include_peers", None) or [])
+    ]
+    summary["exclude_peers"] = [
+        _peer_summary(con, peer) for peer in (getattr(folder, "exclude_peers", None) or [])
+    ]
     return summary
 
 
@@ -516,7 +546,9 @@ async def _input_peers_for_chat_ids(client, chat_ids: list[int]) -> list[Any]:
     return peers
 
 
-async def _check_emoticon_persisted(client, folder_id: int, requested_emoticon: str | None) -> list[str]:
+async def _check_emoticon_persisted(
+    client, folder_id: int, requested_emoticon: str | None
+) -> list[str]:
     """Round-trip check: did Telegram store the emoticon we sent?
 
     Telegram's curated allowlist silently drops most emojis. After write, read
@@ -652,7 +684,13 @@ async def _folder_create_runner(args) -> dict[str, Any]:
                 "warnings": warnings,
                 "idempotent_replay": False,
             }
-            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()
@@ -688,11 +726,25 @@ def _flags_from_existing(existing: DialogFilter, updates: dict[str, Any]) -> dic
     return flags
 
 
-async def _updated_dialog_filter(client, existing: DialogFilter, args, updates: dict[str, Any]) -> DialogFilter:
-    include_peers = [] if updates.get("clear_include") else list(getattr(existing, "include_peers", None) or [])
-    exclude_peers = [] if updates.get("clear_exclude") else list(getattr(existing, "exclude_peers", None) or [])
-    include_peers.extend(await _input_peers_for_chat_ids(client, [int(chat_id) for chat_id in (args.include_chat or [])]))
-    exclude_peers.extend(await _input_peers_for_chat_ids(client, [int(chat_id) for chat_id in (args.exclude_chat or [])]))
+async def _updated_dialog_filter(
+    client, existing: DialogFilter, args, updates: dict[str, Any]
+) -> DialogFilter:
+    include_peers = (
+        [] if updates.get("clear_include") else list(getattr(existing, "include_peers", None) or [])
+    )
+    exclude_peers = (
+        [] if updates.get("clear_exclude") else list(getattr(existing, "exclude_peers", None) or [])
+    )
+    include_peers.extend(
+        await _input_peers_for_chat_ids(
+            client, [int(chat_id) for chat_id in (args.include_chat or [])]
+        )
+    )
+    exclude_peers.extend(
+        await _input_peers_for_chat_ids(
+            client, [int(chat_id) for chat_id in (args.exclude_chat or [])]
+        )
+    )
     title = updates.get("title", getattr(existing, "title", _folder_title("Folder")))
     emoticon = updates.get("emoticon", getattr(existing, "emoticon", None))
     return _dialog_filter(
@@ -727,7 +779,11 @@ async def _folder_edit_runner(args) -> dict[str, Any]:
             "clear_exclude": bool(getattr(args, "clear_exclude", False)),
             "include_chat_ids": list(getattr(args, "include_chat", []) or []),
             "exclude_chat_ids": list(getattr(args, "exclude_chat", []) or []),
-            "boolean_updates": {field: getattr(args, field) for field in _FOLDER_BOOL_FIELDS if getattr(args, field, None) is not None},
+            "boolean_updates": {
+                field: getattr(args, field)
+                for field in _FOLDER_BOOL_FIELDS
+                if getattr(args, field, None) is not None
+            },
             "telethon_method": "UpdateDialogFilterRequest",
         }
         if args.dry_run:
@@ -747,12 +803,16 @@ async def _folder_edit_runner(args) -> dict[str, Any]:
         await client.start()
         try:
             filters = _folders_from_result(await client(GetDialogFiltersRequest()))
-            existing = _ensure_mutable_folder(_matching_folder(filters, int(args.folder_id)), int(args.folder_id))
+            existing = _ensure_mutable_folder(
+                _matching_folder(filters, int(args.folder_id)), int(args.folder_id)
+            )
             folder = await _updated_dialog_filter(client, existing, args, updates)
             await client(UpdateDialogFilterRequest(id=int(args.folder_id), filter=folder))
             warnings = []
             if args.emoticon is not None:
-                warnings = await _check_emoticon_persisted(client, int(args.folder_id), args.emoticon)
+                warnings = await _check_emoticon_persisted(
+                    client, int(args.folder_id), args.emoticon
+                )
             data = {
                 "folder_id": int(args.folder_id),
                 "title": _folder_title_text(folder.title),
@@ -763,7 +823,13 @@ async def _folder_edit_runner(args) -> dict[str, Any]:
                 "warnings": warnings,
                 "idempotent_replay": False,
             }
-            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()
@@ -786,7 +852,11 @@ async def _folder_delete_runner(args) -> dict[str, Any]:
             data = dict(replay["data"])
             data["idempotent_replay"] = True
             return data
-        payload = {"folder_id": folder_id, "telethon_method": "UpdateDialogFilterRequest", "filter": None}
+        payload = {
+            "folder_id": folder_id,
+            "telethon_method": "UpdateDialogFilterRequest",
+            "filter": None,
+        }
         if args.dry_run:
             return _dry_run_envelope(command, request_id, payload)
         _check_write_rate_limit()
@@ -805,7 +875,13 @@ async def _folder_delete_runner(args) -> dict[str, Any]:
         try:
             await client(UpdateDialogFilterRequest(id=folder_id, filter=None))
             data = {"folder_id": folder_id, "deleted": True, "idempotent_replay": False}
-            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()
@@ -867,7 +943,9 @@ async def _folder_membership_runner(args, *, command: str, add: bool) -> dict[st
         await client.start()
         try:
             filters = _folders_from_result(await client(GetDialogFiltersRequest()))
-            existing = _ensure_mutable_folder(_matching_folder(filters, int(args.folder_id)), int(args.folder_id))
+            existing = _ensure_mutable_folder(
+                _matching_folder(filters, int(args.folder_id)), int(args.folder_id)
+            )
             target_peer = await client.get_input_entity(chat["chat_id"])
             include_peers = list(getattr(existing, "include_peers", None) or [])
             exclude_peers = list(getattr(existing, "exclude_peers", None) or [])
@@ -901,7 +979,13 @@ async def _folder_membership_runner(args, *, command: str, add: bool) -> dict[st
                 "warnings": warnings,
                 "idempotent_replay": False,
             }
-            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()
@@ -952,9 +1036,11 @@ async def _folders_reorder_runner(args) -> dict[str, Any]:
         await client.start()
         try:
             existing = _folders_from_result(await client(GetDialogFiltersRequest()))
-            existing_ids = {_folder_id(f) for f in existing
-                            if not isinstance(f, DialogFilterDefault)
-                            and _folder_id(f) > 0}
+            existing_ids = {
+                _folder_id(f)
+                for f in existing
+                if not isinstance(f, DialogFilterDefault) and _folder_id(f) > 0
+            }
             if set(order) != existing_ids:
                 raise BadArgs(
                     f"supplied ids {sorted(order)} must exactly match existing "
@@ -962,7 +1048,13 @@ async def _folders_reorder_runner(args) -> dict[str, Any]:
                 )
             await client(UpdateDialogFiltersOrderRequest(order=order))
             data = {"order": order, "reordered": True, "idempotent_replay": False}
-            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()
@@ -1130,7 +1222,13 @@ async def _topic_create_runner(args) -> dict[str, Any]:
                 "chat": chat,
                 "idempotent_replay": False,
             }
-            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()
@@ -1189,17 +1287,29 @@ async def _topic_edit_runner(args) -> dict[str, Any]:
             state_mutations = {k: v for k, v in mutations.items() if k in state_keys}
             calls_made = 0
             if content_mutations and state_mutations:
-                await client(EditForumTopicRequest(
-                    peer=entity, topic_id=int(args.topic_id), **content_mutations,
-                ))
-                await client(EditForumTopicRequest(
-                    peer=entity, topic_id=int(args.topic_id), **state_mutations,
-                ))
+                await client(
+                    EditForumTopicRequest(
+                        peer=entity,
+                        topic_id=int(args.topic_id),
+                        **content_mutations,
+                    )
+                )
+                await client(
+                    EditForumTopicRequest(
+                        peer=entity,
+                        topic_id=int(args.topic_id),
+                        **state_mutations,
+                    )
+                )
                 calls_made = 2
             else:
-                await client(EditForumTopicRequest(
-                    peer=entity, topic_id=int(args.topic_id), **mutations,
-                ))
+                await client(
+                    EditForumTopicRequest(
+                        peer=entity,
+                        topic_id=int(args.topic_id),
+                        **mutations,
+                    )
+                )
                 calls_made = 1
             data = {
                 "chat": chat,
@@ -1208,7 +1318,13 @@ async def _topic_edit_runner(args) -> dict[str, Any]:
                 "telethon_calls": calls_made,
                 "idempotent_replay": False,
             }
-            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()
@@ -1251,9 +1367,24 @@ async def _topic_pin_state_runner(args, *, command: str, pinned: bool) -> dict[s
         await client.start()
         try:
             entity = await client.get_entity(chat["chat_id"])
-            await client(UpdatePinnedForumTopicRequest(peer=entity, topic_id=int(args.topic_id), pinned=pinned))
-            data = {"chat": chat, "topic_id": int(args.topic_id), "pinned": pinned, "idempotent_replay": False}
-            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            await client(
+                UpdatePinnedForumTopicRequest(
+                    peer=entity, topic_id=int(args.topic_id), pinned=pinned
+                )
+            )
+            data = {
+                "chat": chat,
+                "topic_id": int(args.topic_id),
+                "pinned": pinned,
+                "idempotent_replay": False,
+            }
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()
@@ -1284,6 +1415,7 @@ def run_topic_unpin(args) -> int:
 async def _discover_runner(args) -> dict[str, Any]:
     import sys
     from tgcli.safety import require_writes_not_readonly
+
     require_writes_not_readonly(args)
     client = make_client(SESSION_PATH)
     await client.start()
@@ -1311,7 +1443,8 @@ def _human(data: dict) -> None:
 
 def run_discover(args) -> int:
     return run_command(
-        "discover", args,
+        "discover",
+        args,
         runner=lambda: _discover_runner(args),
         human_formatter=_human,
         audit_path=AUDIT_PATH,
@@ -1319,6 +1452,7 @@ def run_discover(args) -> int:
 
 
 # ---------- unread ----------
+
 
 async def _unread_runner(args) -> dict[str, Any]:
     client = make_client(SESSION_PATH)
@@ -1355,7 +1489,8 @@ def _unread_human(data: dict) -> None:
 
 def run_unread(args) -> int:
     return run_command(
-        "unread", args,
+        "unread",
+        args,
         runner=lambda: _unread_runner(args),
         human_formatter=_unread_human,
         audit_path=AUDIT_PATH,
@@ -1363,6 +1498,7 @@ def run_unread(args) -> int:
 
 
 # ---------- chats-info ----------
+
 
 def _member_count(raw_json) -> int | None:
     if not isinstance(raw_json, dict):
@@ -1433,7 +1569,8 @@ def _chats_info_human(data: dict) -> None:
 
 def run_chats_info(args) -> int:
     return run_command(
-        "chats-info", args,
+        "chats-info",
+        args,
         runner=lambda: _chat_info_runner(args),
         human_formatter=_chats_info_human,
         audit_path=AUDIT_PATH,
@@ -1441,6 +1578,7 @@ def run_chats_info(args) -> int:
 
 
 # ---------- leave-chat (Phase 9) ----------
+
 
 async def _leave_chat_runner(args) -> dict[str, Any]:
     from tgcli.safety import require_typed_confirm
@@ -1472,29 +1610,47 @@ async def _leave_chat_runner(args) -> dict[str, Any]:
             raise BadArgs("cannot leave a 1-on-1 user chat (use delete-msg to clean history)")
 
         if args.dry_run:
-            return _dry_run_envelope(command, request_id, {
-                "chat": chat, "telethon_method": "client.delete_dialog",
-            })
+            return _dry_run_envelope(
+                command,
+                request_id,
+                {
+                    "chat": chat,
+                    "telethon_method": "client.delete_dialog",
+                },
+            )
 
         _check_write_rate_limit()
-        audit_pre(AUDIT_PATH, cmd=command, request_id=request_id,
-                  resolved_chat_id=chat["chat_id"], resolved_chat_title=chat["title"],
-                  payload_preview={"chat": chat},
-                  telethon_method="client.delete_dialog", dry_run=False)
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=chat["chat_id"],
+            resolved_chat_title=chat["title"],
+            payload_preview={"chat": chat},
+            telethon_method="client.delete_dialog",
+            dry_run=False,
+        )
 
         client = make_client(SESSION_PATH)
         await client.start()
         try:
             entity = await client.get_input_entity(chat["chat_id"])
             await client.delete_dialog(entity)
-            con.execute("UPDATE tg_chats SET left = 1 WHERE chat_id = ?",
-                        (chat["chat_id"],))
+            con.execute("UPDATE tg_chats SET left = 1 WHERE chat_id = ?", (chat["chat_id"],))
             con.commit()
-            data = {"chat": chat, "left": True,
-                    "telethon_method": "client.delete_dialog",
-                    "idempotent_replay": False}
-            record_idempotency(con, args.idempotency_key, command, request_id,
-                               _write_result(command, request_id, data))
+            data = {
+                "chat": chat,
+                "left": True,
+                "telethon_method": "client.delete_dialog",
+                "idempotent_replay": False,
+            }
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()

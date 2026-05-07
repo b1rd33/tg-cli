@@ -1,4 +1,5 @@
 """Phase 8 — owner-only file perms (0600/0700)."""
+
 from __future__ import annotations
 
 import os

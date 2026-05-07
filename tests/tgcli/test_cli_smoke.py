@@ -1,4 +1,5 @@
 """Subprocess-level smoke tests for the tgcli CLI surface."""
+
 from __future__ import annotations
 
 import subprocess
@@ -45,13 +46,17 @@ def _run_stats_subprocess(tmp_path: _Path, *, db: _Path | None) -> _subprocess.C
         env["TG_DB_PATH"] = str(tmp_path / "does-not-exist.sqlite")
     return _subprocess.run(
         [str(py), "-m", "tgcli", "stats", "--json"],
-        cwd=str(project), capture_output=True, text=True, env=env,
+        cwd=str(project),
+        capture_output=True,
+        text=True,
+        env=env,
     )
 
 
 def test_stats_json_envelope_with_seeded_db(tmp_path):
     """With a freshly seeded DB, `tg stats --json` MUST return exit 0 + success envelope."""
     from tgcli.db import connect
+
     seed_db = tmp_path / "seeded.sqlite"
     con = connect(seed_db)  # creates schema
     con.execute("INSERT INTO tg_chats(chat_id, type, title) VALUES (1, 'user', 'Alice')")
@@ -152,7 +157,7 @@ def test_phase4_me_offline_smoke(tmp_path):
             "Alice Example",
             0,
             "2026-05-07T10:00:00+00:00",
-            "{\"id\": 42}",
+            '{"id": 42}',
         ),
     )
     con.commit()
@@ -206,7 +211,7 @@ def test_phase4_message_read_commands_smoke(tmp_path):
             0,
             None,
             None,
-            "{\"id\": 1}",
+            '{"id": 1}',
         ),
     )
     con.commit()
@@ -254,7 +259,7 @@ def test_phase4_chats_info_smoke(tmp_path):
             "supergroup",
             "Alpha Group",
             "alpha_group",
-            "{\"id\": 900, \"participants_count\": 123}",
+            '{"id": 900, "participants_count": 123}',
         ),
     )
     con.commit()
@@ -377,7 +382,9 @@ def test_phase6_fuzzy_write_gate_smoke(tmp_path):
 
     db = tmp_path / "telegram.sqlite"
     con = connect(db)
-    con.execute("INSERT INTO tg_chats(chat_id, type, title) VALUES (?, ?, ?)", (123, "user", "Alpha Chat"))
+    con.execute(
+        "INSERT INTO tg_chats(chat_id, type, title) VALUES (?, ?, ?)", (123, "user", "Alpha Chat")
+    )
     con.commit()
     con.close()
 
@@ -435,11 +442,64 @@ def test_phase6_other_write_dry_run_smoke(tmp_path):
         "TG_AUDIT_PATH": str(tmp_path / "audit.log"),
     }
     commands = [
-        [str(PYTHON), "-m", "tgcli", "edit-msg", "@alpha", "1", "updated", "--allow-write", "--dry-run", "--json"],
-        [str(PYTHON), "-m", "tgcli", "forward", "@alpha", "1", "@beta", "--allow-write", "--dry-run", "--json"],
-        [str(PYTHON), "-m", "tgcli", "pin-msg", "@alpha", "1", "--allow-write", "--dry-run", "--json"],
-        [str(PYTHON), "-m", "tgcli", "unpin-msg", "@alpha", "1", "--allow-write", "--dry-run", "--json"],
-        [str(PYTHON), "-m", "tgcli", "react", "@alpha", "1", "👍", "--allow-write", "--dry-run", "--json"],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "edit-msg",
+            "@alpha",
+            "1",
+            "updated",
+            "--allow-write",
+            "--dry-run",
+            "--json",
+        ],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "forward",
+            "@alpha",
+            "1",
+            "@beta",
+            "--allow-write",
+            "--dry-run",
+            "--json",
+        ],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "pin-msg",
+            "@alpha",
+            "1",
+            "--allow-write",
+            "--dry-run",
+            "--json",
+        ],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "unpin-msg",
+            "@alpha",
+            "1",
+            "--allow-write",
+            "--dry-run",
+            "--json",
+        ],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "react",
+            "@alpha",
+            "1",
+            "👍",
+            "--allow-write",
+            "--dry-run",
+            "--json",
+        ],
         [str(PYTHON), "-m", "tgcli", "mark-read", "@alpha", "--allow-write", "--dry-run", "--json"],
     ]
     for command in commands:
@@ -539,9 +599,41 @@ def test_phase61_topic_write_dry_run_smoke(tmp_path):
         "TG_AUDIT_PATH": str(tmp_path / "audit.log"),
     }
     commands = [
-        [str(PYTHON), "-m", "tgcli", "topic-edit", "@alpha_forum", "55", "--title", "Renamed", "--allow-write", "--dry-run", "--json"],
-        [str(PYTHON), "-m", "tgcli", "topic-pin", "@alpha_forum", "55", "--allow-write", "--dry-run", "--json"],
-        [str(PYTHON), "-m", "tgcli", "topic-unpin", "@alpha_forum", "55", "--allow-write", "--dry-run", "--json"],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "topic-edit",
+            "@alpha_forum",
+            "55",
+            "--title",
+            "Renamed",
+            "--allow-write",
+            "--dry-run",
+            "--json",
+        ],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "topic-pin",
+            "@alpha_forum",
+            "55",
+            "--allow-write",
+            "--dry-run",
+            "--json",
+        ],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "topic-unpin",
+            "@alpha_forum",
+            "55",
+            "--allow-write",
+            "--dry-run",
+            "--json",
+        ],
     ]
     for command in commands:
         result = _subprocess.run(
@@ -696,11 +788,71 @@ def test_phase62_folder_other_write_dry_run_smoke(tmp_path):
         "TG_AUDIT_PATH": str(tmp_path / "audit.log"),
     }
     commands = [
-        [str(PYTHON), "-m", "tgcli", "folder-edit", "2", "--title", "Ops 2", "--allow-write", "--idempotency-key", "phase62-edit-dry", "--dry-run", "--json"],
-        [str(PYTHON), "-m", "tgcli", "folder-delete", "2", "--allow-write", "--idempotency-key", "phase62-delete-dry", "--dry-run", "--json"],
-        [str(PYTHON), "-m", "tgcli", "folder-add-chat", "2", "@alpha_forum", "--allow-write", "--idempotency-key", "phase62-add-dry", "--dry-run", "--json"],
-        [str(PYTHON), "-m", "tgcli", "folder-remove-chat", "2", "@alpha_forum", "--allow-write", "--idempotency-key", "phase62-remove-dry", "--dry-run", "--json"],
-        [str(PYTHON), "-m", "tgcli", "folders-reorder", "2", "3", "--allow-write", "--idempotency-key", "phase62-reorder-dry", "--dry-run", "--json"],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "folder-edit",
+            "2",
+            "--title",
+            "Ops 2",
+            "--allow-write",
+            "--idempotency-key",
+            "phase62-edit-dry",
+            "--dry-run",
+            "--json",
+        ],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "folder-delete",
+            "2",
+            "--allow-write",
+            "--idempotency-key",
+            "phase62-delete-dry",
+            "--dry-run",
+            "--json",
+        ],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "folder-add-chat",
+            "2",
+            "@alpha_forum",
+            "--allow-write",
+            "--idempotency-key",
+            "phase62-add-dry",
+            "--dry-run",
+            "--json",
+        ],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "folder-remove-chat",
+            "2",
+            "@alpha_forum",
+            "--allow-write",
+            "--idempotency-key",
+            "phase62-remove-dry",
+            "--dry-run",
+            "--json",
+        ],
+        [
+            str(PYTHON),
+            "-m",
+            "tgcli",
+            "folders-reorder",
+            "2",
+            "3",
+            "--allow-write",
+            "--idempotency-key",
+            "phase62-reorder-dry",
+            "--dry-run",
+            "--json",
+        ],
     ]
     for command in commands:
         result = _subprocess.run(

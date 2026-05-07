@@ -1,108 +1,164 @@
-# telegram_test
+# tg-cli
 
-Read-only Telegram scraper. Logs in as your account, captures incoming
-messages, backfills history, syncs contacts. Stores everything in local
-SQLite. The only outbound action is an optional one-line echo to your own
-Saved Messages — never to anyone else.
+[![PyPI](https://img.shields.io/pypi/v/tg-cli.svg)](https://pypi.org/project/tg-cli/)
+[![CI](https://github.com/b1rd33/tg-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/b1rd33/tg-cli/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/tg-cli.svg)](https://pypi.org/project/tg-cli/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## Setup (one time)
+**Agent-friendly Telegram CLI** built on Telethon. Read, write, archive,
+and listen to your own Telegram account from the terminal with JSON output,
+idempotency, audit logging, multi-account stores, and explicit safety gates
+for autonomous-agent use.
 
-1. **Register a personal app** at https://my.telegram.org/apps
-   - Sign in with your phone number
-   - Click "Create new application"
-   - Title and short name can be anything (e.g. "personal-archiver")
-   - URL/platform/description are optional
-   - Copy the `App api_id` and `App api_hash` values
+`tg-cli` is for developers and local agents that need a predictable Telegram
+surface without running a bot account or handing control to a GUI client. It
+uses your normal Telegram account through Telethon and stores a local SQLite
+cache for fast offline queries.
 
-2. **Set the credentials in your shell**:
-
-   ```bash
-   export TG_API_ID=12345678
-   export TG_API_HASH=abcdef0123456789abcdef0123456789
-   ```
-
-   (or copy `.env.example` → `.env` and `source` it before running)
-
-3. **First-time auth** (interactive — Telegram will SMS you a 5-digit code):
-
-   ```bash
-   cd /Users/christiannikolov/Projects/scrapling-test/telegram_test
-   ../.venv/bin/python tg_scrape.py login
-   ```
-
-   This creates `tg.session` next to the script. Subsequent runs read
-   from it silently. **Treat that file like a password.**
-
-## Use
+## Quick start
 
 ```bash
-# All commands run from this directory with the project venv:
-cd /Users/christiannikolov/Projects/scrapling-test/telegram_test
-PY=../.venv/bin/python
-
-# Pull last 200 messages from your top 50 chats (1s pause between chats).
-# Throttled — first run on a heavy account may FloodWait briefly.
-$PY tg_scrape.py backfill --per-chat 200 --max-chats 50
-
-# Pull your phone-book contacts (only contacts already on your phone)
-$PY tg_scrape.py sync-contacts
-
-# Live listener — every incoming message gets stored in SQLite.
-# Stays running until Ctrl+C.
-$PY tg_scrape.py listen
-
-# Same, but ALSO echo a one-line summary of each message to your own
-# Saved Messages (so your phone notifies you with a clean unified feed):
-$PY tg_scrape.py listen --notify
-
-# DB summary (chat counts, top 10 chats by message volume, latest msg)
-$PY tg_scrape.py stats
+pip install tg-cli
+echo "TG_API_ID=12345678" > .env
+echo "TG_API_HASH=abcdef0123456789abcdef0123456789" >> .env
+tg login
+tg stats
 ```
 
-## What gets stored
+Get `TG_API_ID` and `TG_API_HASH` from https://my.telegram.org/apps.
 
-`telegram.sqlite` (next to this file):
+## Features
 
-| Table         | Rows                                                  |
-|---------------|-------------------------------------------------------|
-| `tg_chats`    | every chat the user has ever seen (DMs, groups, channels) |
-| `tg_messages` | text + metadata for every captured message            |
-| `tg_contacts` | name, phone, username for everyone in your phone-book |
+- 46 commands covering read, write, folder, topic, account, and destructive operations
+- Multi-account mode with isolated session, database, and audit paths per account
+- JSON envelope output for clean agent integration
+- Local SQLite cache for fast reads and archival workflows
+- Write safety through `--allow-write`, `--dry-run`, idempotency keys, and append-only audit logs
+- Destructive safety through typed `--confirm <id>` checks
+- Read-only mode for trusted inspection with `--read-only` or `TG_READONLY=1`
 
-Plus `tg.session` — Telethon's encrypted auth token.
+## Commands at a glance
 
-## What it does NOT do
+| Command | Purpose |
+| --- | --- |
+| `account-sessions` | List authenticated Telegram sessions |
+| `accounts-add` | Create a local account store |
+| `accounts-list` | List local account stores |
+| `accounts-remove` | Delete a local account store |
+| `accounts-show` | Show current account paths |
+| `accounts-use` | Switch the default local account |
+| `backfill` | Pull historical messages into SQLite |
+| `block-user` | Block a user or bot |
+| `chats-info` | Show cached chat metadata |
+| `contacts` | List synced contacts |
+| `delete-msg` | Delete one or more messages |
+| `discover` | Scan dialogs without fetching messages |
+| `doctor` | Diagnose env, session, DB, schema, and optional live API |
+| `edit-msg` | Edit one of your own text messages |
+| `folder-add-chat` | Add a chat to a Telegram folder |
+| `folder-create` | Create a Telegram folder |
+| `folder-delete` | Delete a Telegram folder |
+| `folder-edit` | Edit a Telegram folder |
+| `folder-remove-chat` | Remove a chat from a Telegram folder |
+| `folder-show` | Show one Telegram folder |
+| `folders-list` | List Telegram folders |
+| `folders-reorder` | Reorder Telegram folders |
+| `forward` | Forward one cached message |
+| `get-msg` | Get one cached message by id |
+| `leave-chat` | Leave a group, supergroup, or channel |
+| `list-msgs` | List cached messages from one chat |
+| `listen` | Capture new incoming messages forever |
+| `login` | Run one-time interactive auth |
+| `mark-read` | Mark all messages in a chat as read |
+| `me` | Print authenticated user info |
+| `pin-msg` | Pin a message |
+| `react` | Add a reaction to a message |
+| `search` | Search cached messages in one chat |
+| `send` | Send a text message |
+| `show` | Print messages from one chat |
+| `stats` | Show a database summary |
+| `sync-contacts` | Pull phone-book contacts from Telegram |
+| `terminate-session` | Terminate a Telegram session |
+| `topic-create` | Create a forum topic |
+| `topic-edit` | Edit a forum topic |
+| `topic-pin` | Pin a forum topic |
+| `topic-unpin` | Unpin a forum topic |
+| `topics-list` | List forum topics in a supergroup |
+| `unblock-user` | Unblock a user or bot |
+| `unpin-msg` | Unpin a message |
+| `unread` | List chats with unread messages |
 
-- Never sends a message to anyone except optionally a summary to your own Saved Messages
-- Never replies, never forwards, never reacts, never joins/leaves anything
-- Never downloads media files (just records that media exists + its type)
-- Never imports phone numbers to discover new Telegram users
+## Why tg-cli?
 
-## Ban risk
+Telegram tooling usually optimizes for one of four shapes: interactive TUIs,
+file-transfer utilities, bot APIs, or MCP servers. `tg-cli` is narrower and
+more scriptable: a local user-account CLI with stable exit codes, JSON output,
+SQLite-backed reads, an audit trail, and explicit write gates. It is designed
+for shell scripts and coding agents that need to inspect or operate on the
+user's own Telegram account while keeping every write intentional.
 
-Effectively zero for read-only userbots. The API calls are the same ones
-the official Telegram clients use. Telethon handles FloodWait throttles
-transparently. If you blast `backfill` against 500 chats with `--throttle
-0`, you'll get rate-limited (a temporary throttle), not banned.
+## Configuration
 
-The default throttle of 1s/chat is conservative.
+Paths and credentials can be provided through environment variables or a local
+`.env` file.
 
-## Inspect the DB
+| Variable | Purpose |
+| --- | --- |
+| `TG_API_ID` | Telegram API id from my.telegram.org |
+| `TG_API_HASH` | Telegram API hash from my.telegram.org |
+| `TG_SESSION_PATH` | Telethon session file path |
+| `TG_DB_PATH` | SQLite cache path |
+| `TG_AUDIT_PATH` | Append-only audit log path |
+| `TG_MEDIA_DIR` | Media output directory |
+| `TG_ACCOUNT` | Active local account name |
+| `TG_READONLY` | Reject Telegram-side and local DB writes when set to `1` |
+| `TG_ALLOW_WRITE` | Allow writes without passing `--allow-write` each time |
+
+## Multi-account
 
 ```bash
-sqlite3 telegram.sqlite
-
--- Most recent 20 incoming messages
-SELECT date, c.title, m.text
-FROM tg_messages m JOIN tg_chats c ON c.chat_id = m.chat_id
-WHERE m.is_outgoing = 0
-ORDER BY date DESC
-LIMIT 20;
-
--- Messages per day (last 30 days)
-SELECT substr(date, 1, 10) AS day, COUNT(*)
-FROM tg_messages
-WHERE date >= date('now', '-30 days')
-GROUP BY day
-ORDER BY day DESC;
+tg accounts-add work
+tg --account work login
+tg accounts-use work
+tg accounts-show
 ```
+
+Each account stores its own session, database, and audit log under
+`accounts/<NAME>/`. The default account remains `default`.
+
+## Safety
+
+Writes are blocked unless you pass `--allow-write` or set `TG_ALLOW_WRITE=1`.
+Destructive commands also require a typed `--confirm <id>` value matched against
+the resolved chat, user, message, folder, or session id. `--dry-run` reports
+what would happen without calling Telegram. `--read-only` and `TG_READONLY=1`
+reject both Telegram-side writes and local DB writers.
+
+Every invocation appends audit entries to `audit.log`. Write commands record
+pre-call and post-call entries with the same `request_id`; idempotency keys can
+replay a cached successful envelope instead of calling Telegram again.
+
+## Architecture
+
+`tgcli.__main__` builds the argparse surface and dispatches into command modules
+under `tgcli/commands/`. Commands share the same output envelope, resolver,
+safety, idempotency, and audit helpers. Telethon handles Telegram API access;
+SQLite stores chats, messages, contacts, folders, topics, and idempotency state.
+
+```text
+tg command
+  -> argparse
+  -> command runner
+  -> safety gates + resolver + audit
+  -> Telethon and/or SQLite
+  -> JSON envelope or human output
+```
+
+## Contributing
+
+See [AGENTS.md](AGENTS.md) for the project's working conventions and
+[docs/superpowers/plans/](docs/superpowers/plans/) for the design history.
+
+## License
+
+MIT - see [LICENSE](LICENSE).

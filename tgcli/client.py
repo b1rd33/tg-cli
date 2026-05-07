@@ -4,6 +4,7 @@ Only one process at a time may hold the Telethon SQLite session; concurrent
 holders corrupt it. We acquire a non-blocking flock on `<session>.lock` at
 client construction; the OS releases it when the process exits.
 """
+
 from __future__ import annotations
 
 import fcntl
@@ -50,6 +51,7 @@ def acquire_session_lock(session_path: Path, *, wait_seconds: float = 0) -> None
     every 100ms until acquired or timeout.
     """
     import time as _time
+
     global _lock_handle
     if _lock_handle is not None:
         return
@@ -63,6 +65,7 @@ def acquire_session_lock(session_path: Path, *, wait_seconds: float = 0) -> None
             f.flush()
             _lock_handle = f
             from tgcli.commands._common import _chmod_owner_only
+
             _chmod_owner_only(lock_path)
             actual_session = Path(str(session_path) + ".session")
             _chmod_owner_only(actual_session)

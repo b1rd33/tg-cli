@@ -7,6 +7,7 @@ Responsibilities:
 - Route output through `output.emit()` honoring --json, --human, and TTY auto.
 - Append one entry to the audit log per invocation.
 """
+
 from __future__ import annotations
 
 import asyncio

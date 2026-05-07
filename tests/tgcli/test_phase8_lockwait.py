@@ -1,4 +1,5 @@
 """Phase 8 — --lock-wait DURATION."""
+
 from __future__ import annotations
 
 import fcntl

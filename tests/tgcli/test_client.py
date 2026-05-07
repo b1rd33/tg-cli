@@ -1,4 +1,5 @@
 """Tests for tgcli.client — credential guard, session lock, factory."""
+
 from __future__ import annotations
 
 import multiprocessing as mp
@@ -54,6 +55,7 @@ def _hold_lock_for(seconds: float, session_path_str: str):
     """Subprocess helper: take the lock and sleep, releasing on exit."""
     from pathlib import Path
     from tgcli.client import acquire_session_lock
+
     acquire_session_lock(Path(session_path_str))
     time.sleep(seconds)
 

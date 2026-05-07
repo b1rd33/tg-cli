@@ -1,4 +1,5 @@
 """Phase 8 — path injection guard."""
+
 from __future__ import annotations
 
 import pytest

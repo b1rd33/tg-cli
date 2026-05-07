@@ -1,4 +1,5 @@
 """Phase 8 — multi-account."""
+
 from __future__ import annotations
 
 import pytest
@@ -55,6 +56,7 @@ def test_remove_account_drops_dir(tmp_path, monkeypatch):
 
 def test_invalid_name_rejected(tmp_path, monkeypatch):
     from tgcli.safety import BadArgs
+
     monkeypatch.setattr("tgcli.accounts.ROOT", tmp_path)
     with pytest.raises(BadArgs):
         add_account("../escape")

@@ -1,4 +1,5 @@
 """Argparse dispatcher for the `tg` CLI."""
+
 from __future__ import annotations
 
 import argparse
@@ -89,8 +90,14 @@ def _emit_top_level_failure(msg: str, code: ExitCode) -> int:
     else:
         print(json.dumps(env, ensure_ascii=False, default=str))
     try:
-        audit_write(AUDIT_PATH, cmd="(top-level)", request_id=request_id,
-                    args_repr={}, result="fail", error_code=code.name)
+        audit_write(
+            AUDIT_PATH,
+            cmd="(top-level)",
+            request_id=request_id,
+            args_repr={},
+            result="fail",
+            error_code=code.name,
+        )
     except OSError:
         pass
     return code
@@ -109,12 +116,15 @@ def main(argv: list[str] | None = None) -> int:
     # Propagate top-level flags via env so command modules don't need to thread them.
     if getattr(args, "lock_wait", 0):
         import os as _os
+
         _os.environ["TG_LOCK_WAIT"] = str(args.lock_wait)
     if getattr(args, "read_only", False):
         import os as _os
+
         _os.environ["TG_READONLY"] = "1"
     if getattr(args, "full", False):
         import os as _os
+
         _os.environ["TG_FULL"] = "1"
     try:
         result = args.func(args)

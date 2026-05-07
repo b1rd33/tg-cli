@@ -104,7 +104,9 @@ def test_send_calls_telethon_and_returns_new_message_id(monkeypatch, tmp_path):
             self.calls.append(("get_entity", chat_id))
             return f"entity-{chat_id}"
 
-        async def send_message(self, entity, text, *, reply_to=None, silent=False, link_preview=True):
+        async def send_message(
+            self, entity, text, *, reply_to=None, silent=False, link_preview=True
+        ):
             self.calls.append(("send_message", entity, text, reply_to, silent, link_preview))
             return FakeMessage()
 
@@ -347,7 +349,9 @@ def test_idempotency_key_skips_second_telethon_call(monkeypatch, tmp_path):
         async def get_entity(self, chat_id):
             return f"entity-{chat_id}"
 
-        async def send_message(self, entity, text, *, reply_to=None, silent=False, link_preview=True):
+        async def send_message(
+            self, entity, text, *, reply_to=None, silent=False, link_preview=True
+        ):
             self.send_count += 1
             return FakeMessage()
 
@@ -460,7 +464,9 @@ def test_pre_audit_and_post_audit_share_request_id(monkeypatch, tmp_path, capsys
         async def get_entity(self, chat_id):
             return f"entity-{chat_id}"
 
-        async def send_message(self, entity, text, *, reply_to=None, silent=False, link_preview=True):
+        async def send_message(
+            self, entity, text, *, reply_to=None, silent=False, link_preview=True
+        ):
             return FakeMessage()
 
         async def disconnect(self):

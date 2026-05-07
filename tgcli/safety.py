@@ -2,6 +2,7 @@
 
 Stdlib only. No Telethon, no DB. Pure functions plus one tiny stateful class.
 """
+
 from __future__ import annotations
 
 import json
@@ -37,9 +38,7 @@ class LocalRateLimited(Exception):
 def require_writes_not_readonly(args) -> None:
     """Reject writes when --read-only or TG_READONLY=1 is set."""
     if getattr(args, "read_only", False) or os.environ.get("TG_READONLY") == "1":
-        raise WriteDisallowed(
-            "Writes blocked: read-only mode active (--read-only / TG_READONLY=1)"
-        )
+        raise WriteDisallowed("Writes blocked: read-only mode active (--read-only / TG_READONLY=1)")
 
 
 def require_write_allowed(args) -> None:
@@ -53,9 +52,7 @@ def require_write_allowed(args) -> None:
         return
     if os.environ.get("TG_ALLOW_WRITE") == "1":
         return
-    raise WriteDisallowed(
-        "Write operations require --allow-write or TG_ALLOW_WRITE=1"
-    )
+    raise WriteDisallowed("Write operations require --allow-write or TG_ALLOW_WRITE=1")
 
 
 def require_typed_confirm(args, *, expected, slot: str) -> None:
@@ -68,8 +65,7 @@ def require_typed_confirm(args, *, expected, slot: str) -> None:
     raw = getattr(args, "confirm", None)
     if raw is None:
         raise BadArgs(
-            f"destructive op requires --confirm <{slot}>. "
-            f"Pass --confirm {expected} to confirm."
+            f"destructive op requires --confirm <{slot}>. Pass --confirm {expected} to confirm."
         )
     if str(raw).strip() != str(expected).strip():
         raise BadArgs(
@@ -82,9 +78,7 @@ def require_confirm(args, action: str) -> None:
     """Raise NeedsConfirm unless --confirm was passed."""
     if getattr(args, "confirm", False):
         return
-    raise NeedsConfirm(
-        f"Destructive op '{action}' requires --confirm"
-    )
+    raise NeedsConfirm(f"Destructive op '{action}' requires --confirm")
 
 
 _EXPLICIT_INT_RE = re.compile(r"^[+-]?\d+$")
@@ -187,6 +181,7 @@ def audit_pre(
     with audit_path.open("a") as f:
         f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
     from tgcli.commands._common import _chmod_owner_only
+
     _chmod_owner_only(audit_path)
 
 
@@ -212,4 +207,5 @@ def audit_write(
     with audit_path.open("a") as f:
         f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
     from tgcli.commands._common import _chmod_owner_only
+
     _chmod_owner_only(audit_path)

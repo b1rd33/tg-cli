@@ -1,4 +1,5 @@
 """Phase 8 — rapid-send detection."""
+
 from __future__ import annotations
 
 import time

@@ -1,4 +1,5 @@
 """Phase 8 — backfill caps."""
+
 from __future__ import annotations
 
 import argparse

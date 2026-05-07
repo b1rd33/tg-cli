@@ -1,4 +1,5 @@
 """Phase 9 — block-user / unblock-user."""
+
 from __future__ import annotations
 
 import argparse
@@ -15,17 +16,27 @@ def _seed(path):
     con = connect(path)
     con.executemany(
         "INSERT INTO tg_chats(chat_id, type, title, username) VALUES (?, ?, ?, ?)",
-        [(200, "user", "Bob", "bob"),
-         (300, "bot", "HelpBot", "helpbot"),
-         (-1001, "channel", "ChanX", "chx")],
+        [
+            (200, "user", "Bob", "bob"),
+            (300, "bot", "HelpBot", "helpbot"),
+            (-1001, "channel", "ChanX", "chx"),
+        ],
     )
-    con.commit(); con.close()
+    con.commit()
+    con.close()
 
 
 def _args(**kw):
-    defaults = {"allow_write": True, "dry_run": False, "idempotency_key": "k1",
-                "fuzzy": False, "json": True, "human": False, "read_only": False,
-                "confirm": None}
+    defaults = {
+        "allow_write": True,
+        "dry_run": False,
+        "idempotency_key": "k1",
+        "fuzzy": False,
+        "json": True,
+        "human": False,
+        "read_only": False,
+        "confirm": None,
+    }
     defaults.update(kw)
     return argparse.Namespace(**defaults)
 
@@ -34,17 +45,20 @@ class _FakeClient:
     def __init__(self):
         self.calls = []
 
-    async def start(self): pass
+    async def start(self):
+        pass
 
     async def get_input_entity(self, c):
         from telethon.tl.types import InputPeerUser
+
         return InputPeerUser(user_id=int(c), access_hash=0)
 
     async def __call__(self, request):
         self.calls.append(request)
         return True
 
-    async def disconnect(self): pass
+    async def disconnect(self):
+        pass
 
 
 def test_block_user_rejects_non_user(monkeypatch, tmp_path):

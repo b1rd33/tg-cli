@@ -2,6 +2,7 @@
 
 Read-only: queries telegram.sqlite, returns counts + top chats + media-by-type.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,8 +37,7 @@ def _gather(args) -> dict[str, Any]:
     contacts = con.execute("SELECT COUNT(*) FROM tg_contacts").fetchone()[0]
     by_kind = dict(con.execute("SELECT type, COUNT(*) FROM tg_chats GROUP BY type").fetchall())
     last = con.execute(
-        "SELECT date, chat_id FROM tg_messages WHERE date IS NOT NULL "
-        "ORDER BY date DESC LIMIT 1"
+        "SELECT date, chat_id FROM tg_messages WHERE date IS NOT NULL ORDER BY date DESC LIMIT 1"
     ).fetchone()
     top_chats = con.execute(
         """
@@ -70,9 +70,7 @@ def _gather(args) -> dict[str, Any]:
         "chats_by_kind": by_kind,
         "messages": messages,
         "contacts": contacts,
-        "latest_message": (
-            {"date": last[0], "chat_id": last[1]} if last else None
-        ),
+        "latest_message": ({"date": last[0], "chat_id": last[1]} if last else None),
         "top_chats": [{"title": title, "messages": n} for title, n in top_chats],
         "media_by_type": [
             {"type": media_type or "?", "seen": total, "downloaded": downloaded or 0}
@@ -101,7 +99,8 @@ def _human(data: dict) -> None:
 
 def run(args) -> int:
     return run_command(
-        "stats", args,
+        "stats",
+        args,
         runner=lambda: _gather(args),
         human_formatter=_human,
         audit_path=AUDIT_PATH,

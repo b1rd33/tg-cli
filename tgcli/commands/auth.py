@@ -1,4 +1,5 @@
 """Auth subcommands. Phase 1: login."""
+
 from __future__ import annotations
 
 import argparse
@@ -26,8 +27,11 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.set_defaults(func=run_login)
 
     me = sub.add_parser("me", help="Print authenticated user info")
-    me.add_argument("--offline", action="store_true",
-                    help="Read cached self user info without connecting to Telegram")
+    me.add_argument(
+        "--offline",
+        action="store_true",
+        help="Read cached self user info without connecting to Telegram",
+    )
     add_output_flags(me)
     me.set_defaults(func=run_me)
 
@@ -55,7 +59,8 @@ def _human(data: dict) -> None:
 
 def run_login(args) -> int:
     return run_command(
-        "login", args,
+        "login",
+        args,
         runner=_runner,
         human_formatter=_human,
         audit_path=AUDIT_PATH,
@@ -63,6 +68,7 @@ def run_login(args) -> int:
 
 
 # ---------- me ----------
+
 
 def _cached_at() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -186,7 +192,8 @@ def _me_human(data: dict) -> None:
 def run_me(args) -> int:
     runner = _me_offline_runner if args.offline else _me_live_runner
     return run_command(
-        "me", args,
+        "me",
+        args,
         runner=runner,
         human_formatter=_me_human,
         audit_path=AUDIT_PATH,

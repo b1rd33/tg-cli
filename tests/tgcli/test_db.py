@@ -1,4 +1,5 @@
 """Tests for tgcli.db — schema, migration, read-only mode."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -11,9 +12,7 @@ from tgcli.db import DatabaseMissing, connect, connect_readonly
 def test_connect_creates_schema(tmp_path):
     db = tmp_path / "fresh.sqlite"
     con = connect(db)
-    tables = {row[0] for row in con.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    )}
+    tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"tg_chats", "tg_messages", "tg_contacts"}.issubset(tables)
     cols = {row[1] for row in con.execute("PRAGMA table_info(tg_messages)")}
     assert "media_path" in cols  # included in CREATE, not added by migration
@@ -36,9 +35,7 @@ def test_connect_migrates_old_db_missing_media_path(tmp_path):
     raw.commit()
     raw.close()
 
-    cols_before = {row[1] for row in sqlite3.connect(db).execute(
-        "PRAGMA table_info(tg_messages)"
-    )}
+    cols_before = {row[1] for row in sqlite3.connect(db).execute("PRAGMA table_info(tg_messages)")}
     assert "media_path" not in cols_before
 
     con = connect(db)

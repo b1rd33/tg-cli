@@ -1,4 +1,5 @@
 """`tg contacts` (list) and `tg sync-contacts` (pull phone-book)."""
+
 from __future__ import annotations
 
 import argparse
@@ -13,28 +14,43 @@ from telethon.tl.functions.contacts import (
 
 from tgcli.client import make_client
 from tgcli.commands._common import (
-    AUDIT_PATH, DB_PATH, SESSION_PATH, add_output_flags, add_write_flags,
+    AUDIT_PATH,
+    DB_PATH,
+    SESSION_PATH,
+    add_output_flags,
+    add_write_flags,
 )
 from tgcli.commands.messages import (
-    _check_write_rate_limit, _dry_run_envelope, _request_id,
-    _resolve_write_chat, _run_write_command, _write_result,
+    _check_write_rate_limit,
+    _dry_run_envelope,
+    _request_id,
+    _resolve_write_chat,
+    _run_write_command,
+    _write_result,
 )
 from tgcli.db import connect, connect_readonly
 from tgcli.dispatch import run_command
 from tgcli.idempotency import lookup as lookup_idempotency
 from tgcli.idempotency import record as record_idempotency
 from tgcli.safety import (
-    BadArgs, audit_pre, require_typed_confirm, require_write_allowed,
+    BadArgs,
+    audit_pre,
+    require_typed_confirm,
+    require_write_allowed,
 )
 
 
 def register(sub: argparse._SubParsersAction) -> None:
     co = sub.add_parser("contacts", help="List synced contacts with phone numbers")
     co.add_argument("--limit", type=int, default=200)
-    co.add_argument("--with-phone-only", action="store_true",
-                    help="Hide contacts with no phone number")
-    co.add_argument("--chatted", action="store_true",
-                    help="Only contacts with whom you have a dialog (run 'discover' first)")
+    co.add_argument(
+        "--with-phone-only", action="store_true", help="Hide contacts with no phone number"
+    )
+    co.add_argument(
+        "--chatted",
+        action="store_true",
+        help="Only contacts with whom you have a dialog (run 'discover' first)",
+    )
     co.add_argument(
         "--min-msgs",
         type=int,
@@ -67,12 +83,15 @@ def _min_msgs(args) -> int:
 
 # ---------- contacts (read) ----------
 
+
 def _list_data(args) -> dict[str, Any]:
     min_msgs = _min_msgs(args)
     con = connect_readonly(DB_PATH)
-    join = ("INNER JOIN tg_chats ch ON ch.chat_id = c.user_id"
-            if args.chatted else
-            "LEFT  JOIN tg_chats ch ON ch.chat_id = c.user_id")
+    join = (
+        "INNER JOIN tg_chats ch ON ch.chat_id = c.user_id"
+        if args.chatted
+        else "LEFT  JOIN tg_chats ch ON ch.chat_id = c.user_id"
+    )
     wheres = []
     params: list[Any] = []
     if args.with_phone_only:
@@ -131,10 +150,9 @@ def _list_human(data: dict) -> None:
         print("No contacts match. If using --chatted, run 'discover' first.")
         return
     for contact in contacts:
-        name = " ".join(
-            part for part in [contact["first_name"], contact["last_name"]]
-            if part
-        ) or "?"
+        name = (
+            " ".join(part for part in [contact["first_name"], contact["last_name"]] if part) or "?"
+        )
         username_str = f"@{contact['username']}" if contact["username"] else ""
         phone_str = f"+{contact['phone']}" if contact["phone"] else "(no phone)"
         mutual_str = " ✓" if contact["is_mutual"] else "  "
@@ -150,7 +168,8 @@ def _list_human(data: dict) -> None:
 
 def run_list(args) -> int:
     return run_command(
-        "contacts", args,
+        "contacts",
+        args,
         runner=lambda: _list_data(args),
         human_formatter=_list_human,
         audit_path=AUDIT_PATH,
@@ -159,9 +178,11 @@ def run_list(args) -> int:
 
 # ---------- sync-contacts (writes local DB) ----------
 
+
 async def _sync_runner(args=None) -> dict[str, Any]:
     if args is not None:
         from tgcli.safety import require_writes_not_readonly
+
         require_writes_not_readonly(args)
     client = make_client(SESSION_PATH)
     await client.start()
@@ -208,7 +229,8 @@ def _sync_human(data: dict) -> None:
 
 def run_sync(args) -> int:
     return run_command(
-        "sync-contacts", args,
+        "sync-contacts",
+        args,
         runner=lambda: _sync_runner(args),
         human_formatter=_sync_human,
         audit_path=AUDIT_PATH,
@@ -216,6 +238,7 @@ def run_sync(args) -> int:
 
 
 # ---------- block-user / unblock-user (Phase 9) ----------
+
 
 def _resolve_target_user(con, args, *, slot_name: str = "user") -> dict:
     """Resolve --user selector and ensure it's a user/bot, not a channel/group."""
@@ -253,25 +276,45 @@ async def _block_user_runner(args) -> dict[str, Any]:
         require_typed_confirm(args, expected=target["chat_id"], slot="user_id")
 
         if args.dry_run:
-            return _dry_run_envelope(command, request_id, {
-                "user": target, "telethon_method": "BlockRequest",
-            })
+            return _dry_run_envelope(
+                command,
+                request_id,
+                {
+                    "user": target,
+                    "telethon_method": "BlockRequest",
+                },
+            )
 
         _check_write_rate_limit()
-        audit_pre(AUDIT_PATH, cmd=command, request_id=request_id,
-                  resolved_chat_id=target["chat_id"], resolved_chat_title=target["title"],
-                  payload_preview={"user": target}, telethon_method="BlockRequest",
-                  dry_run=False)
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=target["chat_id"],
+            resolved_chat_title=target["title"],
+            payload_preview={"user": target},
+            telethon_method="BlockRequest",
+            dry_run=False,
+        )
 
         client = make_client(SESSION_PATH)
         await client.start()
         try:
             input_peer = await client.get_input_entity(target["chat_id"])
             await client(BlockRequest(id=input_peer))
-            data = {"user": target, "blocked": True,
-                    "telethon_method": "BlockRequest", "idempotent_replay": False}
-            record_idempotency(con, args.idempotency_key, command, request_id,
-                               _write_result(command, request_id, data))
+            data = {
+                "user": target,
+                "blocked": True,
+                "telethon_method": "BlockRequest",
+                "idempotent_replay": False,
+            }
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()
@@ -295,25 +338,45 @@ async def _unblock_user_runner(args) -> dict[str, Any]:
         target = _resolve_target_user(con, args)
 
         if args.dry_run:
-            return _dry_run_envelope(command, request_id, {
-                "user": target, "telethon_method": "UnblockRequest",
-            })
+            return _dry_run_envelope(
+                command,
+                request_id,
+                {
+                    "user": target,
+                    "telethon_method": "UnblockRequest",
+                },
+            )
 
         _check_write_rate_limit()
-        audit_pre(AUDIT_PATH, cmd=command, request_id=request_id,
-                  resolved_chat_id=target["chat_id"], resolved_chat_title=target["title"],
-                  payload_preview={"user": target}, telethon_method="UnblockRequest",
-                  dry_run=False)
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=target["chat_id"],
+            resolved_chat_title=target["title"],
+            payload_preview={"user": target},
+            telethon_method="UnblockRequest",
+            dry_run=False,
+        )
 
         client = make_client(SESSION_PATH)
         await client.start()
         try:
             input_peer = await client.get_input_entity(target["chat_id"])
             await client(UnblockRequest(id=input_peer))
-            data = {"user": target, "unblocked": True,
-                    "telethon_method": "UnblockRequest", "idempotent_replay": False}
-            record_idempotency(con, args.idempotency_key, command, request_id,
-                               _write_result(command, request_id, data))
+            data = {
+                "user": target,
+                "unblocked": True,
+                "telethon_method": "UnblockRequest",
+                "idempotent_replay": False,
+            }
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()

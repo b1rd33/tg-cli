@@ -82,8 +82,10 @@ def test_emit_json_failure_returns_mapped_exit_code(capsys):
 
 def test_emit_human_uses_formatter(capsys):
     captured = []
+
     def fmt(data):
         captured.append(data)
+
     env = success("stats", {"chats": 9}, request_id="r")
     emit(env, json_mode=False, human_formatter=fmt)
     assert captured == [{"chats": 9}]

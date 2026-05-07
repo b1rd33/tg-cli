@@ -31,7 +31,8 @@ def _read_stdout(capsys) -> dict:
 def test_run_command_success_emits_envelope(capsys, tmp_path):
     args = make_args()
     code = run_command(
-        "stats", args,
+        "stats",
+        args,
         runner=lambda: {"chats": 4},
         audit_path=tmp_path / "audit.log",
     )
@@ -63,15 +64,18 @@ def test_run_command_async_runner(capsys, tmp_path):
     assert _read_stdout(capsys)["data"] == {"value": 42}
 
 
-@pytest.mark.parametrize("exc, expected_code", [
-    (BadArgs("missing pattern"), ExitCode.BAD_ARGS),
-    (DatabaseMissing("no DB"), ExitCode.NOT_FOUND),
-    (MissingCredentials("no creds"), ExitCode.NOT_AUTHED),
-    (SessionLocked("locked"), ExitCode.GENERIC),
-    (WriteDisallowed("nope"), ExitCode.WRITE_DISALLOWED),
-    (NeedsConfirm("confirm"), ExitCode.NEEDS_CONFIRM),
-    (LocalRateLimited("slow", 1.5), ExitCode.LOCAL_RATE_LIMIT),
-])
+@pytest.mark.parametrize(
+    "exc, expected_code",
+    [
+        (BadArgs("missing pattern"), ExitCode.BAD_ARGS),
+        (DatabaseMissing("no DB"), ExitCode.NOT_FOUND),
+        (MissingCredentials("no creds"), ExitCode.NOT_AUTHED),
+        (SessionLocked("locked"), ExitCode.GENERIC),
+        (WriteDisallowed("nope"), ExitCode.WRITE_DISALLOWED),
+        (NeedsConfirm("confirm"), ExitCode.NEEDS_CONFIRM),
+        (LocalRateLimited("slow", 1.5), ExitCode.LOCAL_RATE_LIMIT),
+    ],
+)
 def test_run_command_maps_known_exceptions(exc, expected_code, capsys, tmp_path):
     def boom():
         raise exc

@@ -3,6 +3,7 @@
 All paths are env-overridable so tests (and multi-account agents) can isolate state.
 The defaults preserve Phase 1 behaviour: <repo>/telegram.sqlite, <repo>/tg.session, etc.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,6 +32,7 @@ def _resolve_account_paths() -> tuple[str, dict[str, Path]]:
         maybe_migrate_default_from_root,
         resolve_account_paths,
     )
+
     name = os.environ.get("TG_ACCOUNT") or current_account()
     if name == DEFAULT_ACCOUNT:
         maybe_migrate_default_from_root()
@@ -49,22 +51,36 @@ AUDIT_PATH: Path = _override("TG_AUDIT_PATH", _account_paths["AUDIT_PATH"])
 def add_output_flags(parser: argparse.ArgumentParser) -> None:
     """`--json` / `--human` for any subcommand. Auto-detects from TTY when neither is set."""
     g = parser.add_mutually_exclusive_group()
-    g.add_argument("--json", action="store_true",
-                   help="Force JSON envelope output (default when stdout is not a TTY)")
-    g.add_argument("--human", action="store_true",
-                   help="Force human-readable output (default on a TTY)")
+    g.add_argument(
+        "--json",
+        action="store_true",
+        help="Force JSON envelope output (default when stdout is not a TTY)",
+    )
+    g.add_argument(
+        "--human", action="store_true", help="Force human-readable output (default on a TTY)"
+    )
 
 
 def add_write_flags(parser: argparse.ArgumentParser, *, destructive: bool = False) -> None:
     """Write-side gates for Telegram-side mutations."""
-    parser.add_argument("--allow-write", action="store_true",
-                        help="Required for any Telegram write")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Print resolved payload and exit before calling Telegram")
-    parser.add_argument("--idempotency-key", default=None,
-                        help="Return a cached result when this write key was already completed")
-    parser.add_argument("--fuzzy", action="store_true",
-                        help="Allow title-based fuzzy chat resolution for this write")
+    parser.add_argument(
+        "--allow-write", action="store_true", help="Required for any Telegram write"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print resolved payload and exit before calling Telegram",
+    )
+    parser.add_argument(
+        "--idempotency-key",
+        default=None,
+        help="Return a cached result when this write key was already completed",
+    )
+    parser.add_argument(
+        "--fuzzy",
+        action="store_true",
+        help="Allow title-based fuzzy chat resolution for this write",
+    )
     if destructive:
         parser.add_argument(
             "--confirm",
@@ -81,6 +97,7 @@ def add_write_flags(parser: argparse.ArgumentParser, *, destructive: bool = Fals
 def _chmod_owner_only(path) -> None:
     """Best-effort chmod to 0600 (file) / 0700 (dir). Silent on missing path or perm errors."""
     import stat as _stat
+
     p = Path(path)
     try:
         if not p.exists():
@@ -102,6 +119,7 @@ def _safe_user_path(value: str) -> str:
     that flows into a path or URI.
     """
     from tgcli.safety import BadArgs
+
     for ch in ("?", "#"):
         if ch in value:
             raise BadArgs(f"path {value!r} contains forbidden character {ch!r}")

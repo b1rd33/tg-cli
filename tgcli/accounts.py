@@ -7,6 +7,7 @@ ROOT/accounts/.current containing just the account name.
 Account name validation: starts with alphanumeric, then alphanumeric +
 underscore + hyphen, no path metacharacters (?, #, /, \\, .., empty).
 """
+
 from __future__ import annotations
 
 import re
@@ -30,9 +31,7 @@ class AccountNotFound(Exception):
 
 def _validate_name(name: str) -> str:
     if not _NAME_RE.match(name):
-        raise BadArgs(
-            f"account name {name!r} invalid; must match [A-Za-z0-9][A-Za-z0-9_-]{{0,63}}"
-        )
+        raise BadArgs(f"account name {name!r} invalid; must match [A-Za-z0-9][A-Za-z0-9_-]{{0,63}}")
     return name
 
 

@@ -93,8 +93,9 @@ def test_rate_limiter_recovers_after_window():
 def test_audit_write_appends_jsonl(tmp_path: Path):
     log = tmp_path / "subdir" / "audit.log"
     audit_write(log, cmd="stats", request_id="r1", args_repr={"--json": True}, result="ok")
-    audit_write(log, cmd="stats", request_id="r2", args_repr={}, result="fail",
-                error_code="NOT_FOUND")
+    audit_write(
+        log, cmd="stats", request_id="r2", args_repr={}, result="fail", error_code="NOT_FOUND"
+    )
 
     lines = log.read_text().splitlines()
     assert len(lines) == 2

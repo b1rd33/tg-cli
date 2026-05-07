@@ -1,4 +1,5 @@
 """Idempotency helpers for Telegram-side write commands."""
+
 from __future__ import annotations
 
 import json
@@ -25,9 +26,7 @@ def lookup(con: sqlite3.Connection, key: str | None, command: str) -> dict[str, 
         return None
     recorded_command, result_json = row
     if recorded_command != command:
-        raise BadArgs(
-            f"Idempotency key {key!r} was already used for command {recorded_command!r}"
-        )
+        raise BadArgs(f"Idempotency key {key!r} was already used for command {recorded_command!r}")
     return json.loads(result_json)
 
 

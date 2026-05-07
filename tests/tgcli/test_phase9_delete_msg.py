@@ -1,4 +1,5 @@
 """Phase 9 — delete-msg with batch + tombstones."""
+
 from __future__ import annotations
 
 import argparse
@@ -20,8 +21,10 @@ def _seed(path):
     con.executemany(
         """INSERT INTO tg_messages(chat_id, message_id, sender_id, date, text,
             is_outgoing, has_media) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        [(123, 100, 11, "2026-05-08T10:00:00", "first", 1, 0),
-         (123, 101, 11, "2026-05-08T10:01:00", "second", 1, 0)],
+        [
+            (123, 100, 11, "2026-05-08T10:00:00", "first", 1, 0),
+            (123, 101, 11, "2026-05-08T10:01:00", "second", 1, 0),
+        ],
     )
     con.commit()
     con.close()
@@ -29,10 +32,18 @@ def _seed(path):
 
 def _args(**kw):
     defaults = {
-        "allow_write": True, "dry_run": False, "idempotency_key": "k1",
-        "fuzzy": False, "json": True, "human": False, "read_only": False,
-        "confirm": "123", "for_everyone": True, "include_deleted": False,
-        "pattern": None, "chat_id": None,
+        "allow_write": True,
+        "dry_run": False,
+        "idempotency_key": "k1",
+        "fuzzy": False,
+        "json": True,
+        "human": False,
+        "read_only": False,
+        "confirm": "123",
+        "for_everyone": True,
+        "include_deleted": False,
+        "pattern": None,
+        "chat_id": None,
     }
     defaults.update(kw)
     return argparse.Namespace(**defaults)
@@ -47,6 +58,7 @@ class _FakeClient:
 
     async def get_input_entity(self, chat_id):
         from telethon.tl.types import InputPeerUser
+
         return InputPeerUser(user_id=int(chat_id), access_hash=0)
 
     async def delete_messages(self, entity, ids, *, revoke=False):
@@ -89,6 +101,7 @@ def test_delete_msg_writes_tombstone_for_revoked(monkeypatch, tmp_path):
     args = _args(chat="@alpha", message_ids=[100], confirm="123", for_everyone=True)
     asyncio.run(messages._delete_msg_runner(args))
     import sqlite3
+
     con = sqlite3.connect(db)
     deleted = con.execute(
         "SELECT deleted FROM tg_messages WHERE chat_id=123 AND message_id=100"
@@ -113,12 +126,15 @@ def test_show_runner_filters_deleted_by_default(monkeypatch, tmp_path):
     db = tmp_path / "telegram.sqlite"
     _seed(db)
     import sqlite3
+
     con = sqlite3.connect(db)
     con.execute("UPDATE tg_messages SET deleted = 1 WHERE message_id = 100")
-    con.commit(); con.close()
+    con.commit()
+    con.close()
     monkeypatch.setattr(messages, "DB_PATH", db)
-    args = _args(chat=None, pattern="@alpha", chat_id=None,
-                 limit=10, reverse=False, include_deleted=False)
+    args = _args(
+        chat=None, pattern="@alpha", chat_id=None, limit=10, reverse=False, include_deleted=False
+    )
     data = messages._show_runner(args)
     texts = [m.get("text") for m in data["messages"]]
     assert "first" not in texts
@@ -129,12 +145,15 @@ def test_show_runner_include_deleted_returns_both(monkeypatch, tmp_path):
     db = tmp_path / "telegram.sqlite"
     _seed(db)
     import sqlite3
+
     con = sqlite3.connect(db)
     con.execute("UPDATE tg_messages SET deleted = 1 WHERE message_id = 100")
-    con.commit(); con.close()
+    con.commit()
+    con.close()
     monkeypatch.setattr(messages, "DB_PATH", db)
-    args = _args(chat=None, pattern="@alpha", chat_id=None,
-                 limit=10, reverse=False, include_deleted=True)
+    args = _args(
+        chat=None, pattern="@alpha", chat_id=None, limit=10, reverse=False, include_deleted=True
+    )
     data = messages._show_runner(args)
     texts = [m.get("text") for m in data["messages"]]
     assert "first" in texts and "second" in texts

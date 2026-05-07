@@ -1,4 +1,5 @@
 """account-sessions and terminate-session (Phase 9)."""
+
 from __future__ import annotations
 
 import argparse
@@ -11,18 +12,28 @@ from telethon.tl.functions.account import (
 
 from tgcli.client import make_client
 from tgcli.commands._common import (
-    AUDIT_PATH, DB_PATH, SESSION_PATH, add_output_flags, add_write_flags,
+    AUDIT_PATH,
+    DB_PATH,
+    SESSION_PATH,
+    add_output_flags,
+    add_write_flags,
 )
 from tgcli.commands.messages import (
-    _check_write_rate_limit, _dry_run_envelope, _request_id,
-    _run_write_command, _write_result,
+    _check_write_rate_limit,
+    _dry_run_envelope,
+    _request_id,
+    _run_write_command,
+    _write_result,
 )
 from tgcli.db import connect
 from tgcli.dispatch import run_command
 from tgcli.idempotency import lookup as lookup_idempotency
 from tgcli.idempotency import record as record_idempotency
 from tgcli.safety import (
-    BadArgs, audit_pre, require_typed_confirm, require_write_allowed,
+    BadArgs,
+    audit_pre,
+    require_typed_confirm,
+    require_write_allowed,
 )
 
 
@@ -70,9 +81,12 @@ async def _account_sessions_runner(args) -> dict[str, Any]:
 
 
 def run_account_sessions(args) -> int:
-    return run_command("account-sessions", args,
-                       runner=lambda: _account_sessions_runner(args),
-                       audit_path=AUDIT_PATH)
+    return run_command(
+        "account-sessions",
+        args,
+        runner=lambda: _account_sessions_runner(args),
+        audit_path=AUDIT_PATH,
+    )
 
 
 async def _terminate_session_runner(args) -> dict[str, Any]:
@@ -108,23 +122,39 @@ async def _terminate_session_runner(args) -> dict[str, Any]:
                     f"terminating it would log you out. Use a different session."
                 )
 
-            payload = {"session_hash": int(args.session_hash),
-                       "device_model": target.device_model,
-                       "telethon_method": "ResetAuthorizationRequest"}
+            payload = {
+                "session_hash": int(args.session_hash),
+                "device_model": target.device_model,
+                "telethon_method": "ResetAuthorizationRequest",
+            }
             if args.dry_run:
                 return _dry_run_envelope(command, request_id, payload)
 
             _check_write_rate_limit()
-            audit_pre(AUDIT_PATH, cmd=command, request_id=request_id,
-                      resolved_chat_id=0, resolved_chat_title="(account)",
-                      payload_preview=payload,
-                      telethon_method="ResetAuthorizationRequest", dry_run=False)
+            audit_pre(
+                AUDIT_PATH,
+                cmd=command,
+                request_id=request_id,
+                resolved_chat_id=0,
+                resolved_chat_title="(account)",
+                payload_preview=payload,
+                telethon_method="ResetAuthorizationRequest",
+                dry_run=False,
+            )
             await client(ResetAuthorizationRequest(hash=int(args.session_hash)))
-            data = {"session_hash": int(args.session_hash),
-                    "device_model": target.device_model,
-                    "terminated": True, "idempotent_replay": False}
-            record_idempotency(con, args.idempotency_key, command, request_id,
-                               _write_result(command, request_id, data))
+            data = {
+                "session_hash": int(args.session_hash),
+                "device_model": target.device_model,
+                "terminated": True,
+                "idempotent_replay": False,
+            }
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()

@@ -2,6 +2,7 @@
 
 Use ``./tg <subcmd>`` or ``python -m tgcli <subcmd>`` instead.
 """
+
 from __future__ import annotations
 
 import sys

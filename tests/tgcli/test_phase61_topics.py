@@ -142,6 +142,7 @@ def test_topics_list_non_forum_error_becomes_bad_args(monkeypatch, tmp_path):
             # Simulate the real Telethon error class. Verified against
             # .venv/lib/python3.12/site-packages/telethon/errors/rpcerrorlist.py:446.
             from telethon.errors.rpcerrorlist import ChannelForumMissingError
+
             raise ChannelForumMissingError(request=request)
 
         async def disconnect(self):
@@ -152,7 +153,9 @@ def test_topics_list_non_forum_error_becomes_bad_args(monkeypatch, tmp_path):
         asyncio.run(chats._topics_list_runner(_args(chat="@alpha_forum", limit=5, query=None)))
 
 
-def test_topic_create_calls_create_forum_topic_request_and_replays_idempotency(monkeypatch, tmp_path):
+def test_topic_create_calls_create_forum_topic_request_and_replays_idempotency(
+    monkeypatch, tmp_path
+):
     db = tmp_path / "telegram.sqlite"
     _seed_chat(db)
     monkeypatch.setattr(chats, "DB_PATH", db)
@@ -307,7 +310,9 @@ def test_send_topic_sets_reply_to_when_reply_to_unset(monkeypatch, tmp_path):
         async def get_entity(self, chat_id):
             return f"entity-{chat_id}"
 
-        async def send_message(self, entity, text, *, reply_to=None, silent=False, link_preview=True):
+        async def send_message(
+            self, entity, text, *, reply_to=None, silent=False, link_preview=True
+        ):
             self.calls.append(("send_message", entity, text, reply_to, silent, link_preview))
             return FakeMessage()
 
@@ -316,7 +321,9 @@ def test_send_topic_sets_reply_to_when_reply_to_unset(monkeypatch, tmp_path):
 
     fake = FakeClient()
     monkeypatch.setattr(messages, "make_client", lambda session_path: fake)
-    args = _args(chat="@alpha_forum", text="hello", reply_to=None, topic=55, silent=False, no_webpage=False)
+    args = _args(
+        chat="@alpha_forum", text="hello", reply_to=None, topic=55, silent=False, no_webpage=False
+    )
 
     data = asyncio.run(messages._send_runner(args))
 
@@ -340,7 +347,9 @@ def test_send_reply_to_overrides_topic_with_warning(monkeypatch, tmp_path):
         async def get_entity(self, chat_id):
             return f"entity-{chat_id}"
 
-        async def send_message(self, entity, text, *, reply_to=None, silent=False, link_preview=True):
+        async def send_message(
+            self, entity, text, *, reply_to=None, silent=False, link_preview=True
+        ):
             self.reply_to = reply_to
             return FakeMessage()
 
@@ -349,7 +358,9 @@ def test_send_reply_to_overrides_topic_with_warning(monkeypatch, tmp_path):
 
     fake = FakeClient()
     monkeypatch.setattr(messages, "make_client", lambda session_path: fake)
-    args = _args(chat="@alpha_forum", text="hello", reply_to=44, topic=55, silent=False, no_webpage=False)
+    args = _args(
+        chat="@alpha_forum", text="hello", reply_to=44, topic=55, silent=False, no_webpage=False
+    )
 
     data = asyncio.run(messages._send_runner(args))
 

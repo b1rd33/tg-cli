@@ -2,6 +2,7 @@
 
 Future split (Phase 5+): messages_read.py + messages_write.py.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,8 +27,14 @@ from telethon.tl.types import ReactionEmoji
 
 from tgcli.client import make_client
 from tgcli.commands._common import (
-    AUDIT_PATH, DB_PATH, MEDIA_DIR, ROOT, SESSION_PATH, add_output_flags,
-    add_write_flags, decode_raw_json,
+    AUDIT_PATH,
+    DB_PATH,
+    MEDIA_DIR,
+    ROOT,
+    SESSION_PATH,
+    add_output_flags,
+    add_write_flags,
+    decode_raw_json,
 )
 from tgcli.db import connect, connect_readonly
 from tgcli.dispatch import run_command
@@ -46,65 +53,75 @@ from tgcli.safety import (
 
 def register(sub: argparse._SubParsersAction) -> None:
     sh = sub.add_parser("show", help="Print messages from one chat")
-    sh.add_argument("pattern", nargs="?", default=None,
-                    help="Substring of chat title (case- and accent-insensitive)")
-    sh.add_argument("--chat-id", type=int, default=None,
-                    help="Use exact chat_id instead of pattern")
-    sh.add_argument("--limit", type=int, default=50,
-                    help="Number of messages (default 50)")
-    sh.add_argument("--reverse", action="store_true",
-                    help="Oldest first instead of newest first")
-    sh.add_argument("--include-deleted", action="store_true",
-                    help="Include locally-tombstoned (deleted-for-everyone) messages")
+    sh.add_argument(
+        "pattern",
+        nargs="?",
+        default=None,
+        help="Substring of chat title (case- and accent-insensitive)",
+    )
+    sh.add_argument(
+        "--chat-id", type=int, default=None, help="Use exact chat_id instead of pattern"
+    )
+    sh.add_argument("--limit", type=int, default=50, help="Number of messages (default 50)")
+    sh.add_argument("--reverse", action="store_true", help="Oldest first instead of newest first")
+    sh.add_argument(
+        "--include-deleted",
+        action="store_true",
+        help="Include locally-tombstoned (deleted-for-everyone) messages",
+    )
     add_output_flags(sh)
     sh.set_defaults(func=run_show)
 
     se = sub.add_parser("search", help="Search cached messages in one chat")
     se.add_argument("chat", help="Chat selector resolved from the local DB")
     se.add_argument("query", help="Text query to search in cached message text")
-    se.add_argument("--limit", type=int, default=50,
-                    help="Number of messages (default 50)")
-    se.add_argument("--case-sensitive", action="store_true",
-                    help="Require exact case match after the DB LIKE scan")
-    se.add_argument("--include-deleted", action="store_true",
-                    help="Include locally-tombstoned messages")
+    se.add_argument("--limit", type=int, default=50, help="Number of messages (default 50)")
+    se.add_argument(
+        "--case-sensitive",
+        action="store_true",
+        help="Require exact case match after the DB LIKE scan",
+    )
+    se.add_argument(
+        "--include-deleted", action="store_true", help="Include locally-tombstoned messages"
+    )
     add_output_flags(se)
     se.set_defaults(func=run_search)
 
     ls = sub.add_parser("list-msgs", help="List cached messages from one chat")
     ls.add_argument("chat", help="Chat selector resolved from the local DB")
-    ls.add_argument("--limit", type=int, default=50,
-                    help="Number of messages (default 50)")
-    ls.add_argument("--since", default=None,
-                    help="Only include messages on or after YYYY-MM-DD")
-    ls.add_argument("--until", default=None,
-                    help="Only include messages on or before YYYY-MM-DD")
-    ls.add_argument("--reverse", action="store_true",
-                    help="Oldest first instead of newest first")
-    ls.add_argument("--include-deleted", action="store_true",
-                    help="Include locally-tombstoned messages")
+    ls.add_argument("--limit", type=int, default=50, help="Number of messages (default 50)")
+    ls.add_argument("--since", default=None, help="Only include messages on or after YYYY-MM-DD")
+    ls.add_argument("--until", default=None, help="Only include messages on or before YYYY-MM-DD")
+    ls.add_argument("--reverse", action="store_true", help="Oldest first instead of newest first")
+    ls.add_argument(
+        "--include-deleted", action="store_true", help="Include locally-tombstoned messages"
+    )
     add_output_flags(ls)
     ls.set_defaults(func=run_list)
 
     gm = sub.add_parser("get-msg", help="Get one cached message by id")
     gm.add_argument("chat", help="Chat selector resolved from the local DB")
     gm.add_argument("message_id", type=int, help="Cached Telegram message id")
-    gm.add_argument("--include-deleted", action="store_true",
-                    help="Include a locally-tombstoned message if it matches")
+    gm.add_argument(
+        "--include-deleted",
+        action="store_true",
+        help="Include a locally-tombstoned message if it matches",
+    )
     add_output_flags(gm)
     gm.set_defaults(func=run_get)
 
     snd = sub.add_parser("send", help="Send a text message")
     snd.add_argument("chat", help="Chat id, @username, or fuzzy title with --fuzzy")
     snd.add_argument("text", help="Message text, or '-' to read from stdin")
-    snd.add_argument("--reply-to", type=int, default=None,
-                     help="Reply to this Telegram message id")
-    snd.add_argument("--topic", type=int, default=None,
-                     help="Forum topic root message id; ignored when --reply-to is provided")
-    snd.add_argument("--silent", action="store_true",
-                     help="Send without notification")
-    snd.add_argument("--no-webpage", action="store_true",
-                     help="Disable link preview")
+    snd.add_argument("--reply-to", type=int, default=None, help="Reply to this Telegram message id")
+    snd.add_argument(
+        "--topic",
+        type=int,
+        default=None,
+        help="Forum topic root message id; ignored when --reply-to is provided",
+    )
+    snd.add_argument("--silent", action="store_true", help="Send without notification")
+    snd.add_argument("--no-webpage", action="store_true", help="Disable link preview")
     add_write_flags(snd, destructive=False)
     add_output_flags(snd)
     snd.set_defaults(func=run_send)
@@ -121,8 +138,12 @@ def register(sub: argparse._SubParsersAction) -> None:
     fwd.add_argument("from_chat", help="Source chat id, @username, or fuzzy title with --fuzzy")
     fwd.add_argument("message_id", type=int, help="Telegram message id to forward")
     fwd.add_argument("to_chat", help="Destination chat id, @username, or fuzzy title with --fuzzy")
-    fwd.add_argument("--topic", type=int, default=None,
-                     help="Destination forum topic root message id (forwards into a topic in the destination chat)")
+    fwd.add_argument(
+        "--topic",
+        type=int,
+        default=None,
+        help="Destination forum topic root message id (forwards into a topic in the destination chat)",
+    )
     add_write_flags(fwd, destructive=False)
     add_output_flags(fwd)
     fwd.set_defaults(func=run_forward)
@@ -144,8 +165,13 @@ def register(sub: argparse._SubParsersAction) -> None:
     dl = sub.add_parser("delete-msg", help="Delete one or more messages from a chat")
     dl.add_argument("chat", help="Chat selector (id, @username, or fuzzy with --fuzzy)")
     dl.add_argument("message_ids", type=int, nargs="+", help="One or more message_ids to delete")
-    dl.add_argument("--for-everyone", dest="for_everyone", action="store_true", default=None,
-                    help="Revoke for all participants (default: True if all ids are outgoing)")
+    dl.add_argument(
+        "--for-everyone",
+        dest="for_everyone",
+        action="store_true",
+        default=None,
+        help="Revoke for all participants (default: True if all ids are outgoing)",
+    )
     dl.add_argument("--no-for-everyone", dest="for_everyone", action="store_false")
     add_write_flags(dl, destructive=True)
     add_output_flags(dl)
@@ -169,12 +195,23 @@ def register(sub: argparse._SubParsersAction) -> None:
     bf.add_argument("--per-chat", type=int, default=200)
     bf.add_argument("--max-chats", type=int, default=100)
     bf.add_argument("--throttle", type=float, default=1.0)
-    bf.add_argument("--max-messages", type=int, default=100_000,
-                    help="Refuse to start backfill if cached message count >= this (default 100000)")
-    bf.add_argument("--max-db-size-mb", type=int, default=500,
-                    help="Refuse to start backfill if telegram.sqlite >= this MB (default 500)")
-    bf.add_argument("--download-media", action="store_true",
-                    help="Also download photos / voice / video / documents to media/<chat_id>/")
+    bf.add_argument(
+        "--max-messages",
+        type=int,
+        default=100_000,
+        help="Refuse to start backfill if cached message count >= this (default 100000)",
+    )
+    bf.add_argument(
+        "--max-db-size-mb",
+        type=int,
+        default=500,
+        help="Refuse to start backfill if telegram.sqlite >= this MB (default 500)",
+    )
+    bf.add_argument(
+        "--download-media",
+        action="store_true",
+        help="Also download photos / voice / video / documents to media/<chat_id>/",
+    )
     add_output_flags(bf)
     bf.set_defaults(func=run_backfill)
 
@@ -206,7 +243,7 @@ def _media_type_of(msg) -> str | None:
     if isinstance(media, MessageMediaDocument):
         doc = getattr(media, "document", None)
         if doc is not None:
-            for attr in (doc.attributes or []):
+            for attr in doc.attributes or []:
                 if isinstance(attr, DocumentAttributeAudio):
                     return "voice" if getattr(attr, "voice", False) else "audio"
                 if isinstance(attr, DocumentAttributeVideo):
@@ -306,6 +343,7 @@ async def _download_media(client, msg, chat_id: int) -> str | None:
 
 # ---------- show ----------
 
+
 def _show_runner(args) -> dict[str, Any]:
     if args.pattern is None and args.chat_id is None:
         raise BadArgs("Need a pattern or --chat-id. Example: tg show Ijadi")
@@ -315,7 +353,9 @@ def _show_runner(args) -> dict[str, Any]:
     chat_id, chat_title = resolve_chat_db(con, raw_selector)
 
     order = "ASC" if args.reverse else "DESC"
-    deleted_clause = "" if getattr(args, "include_deleted", False) else " AND (deleted = 0 OR deleted IS NULL)"
+    deleted_clause = (
+        "" if getattr(args, "include_deleted", False) else " AND (deleted = 0 OR deleted IS NULL)"
+    )
     rows = con.execute(
         f"""
         SELECT date, is_outgoing, text, media_type
@@ -345,6 +385,7 @@ def _show_runner(args) -> dict[str, Any]:
 def _truncate_human(text: str, *, limit: int = 200) -> str:
     """Trim text to `limit` chars in human mode unless TG_FULL=1."""
     import os as _os
+
     if _os.environ.get("TG_FULL") == "1":
         return text
     if len(text) <= limit:
@@ -359,7 +400,9 @@ def _show_human(data: dict) -> None:
         print(f"No messages stored for '{chat['title']}' (chat_id {chat['chat_id']}).")
         return
     direction = "oldest first" if data["order"] == "oldest_first" else "newest first"
-    print(f"=== {chat['title']}  ·  chat_id {chat['chat_id']}  ·  {len(msgs)} messages, {direction} ===\n")
+    print(
+        f"=== {chat['title']}  ·  chat_id {chat['chat_id']}  ·  {len(msgs)} messages, {direction} ===\n"
+    )
     for m in msgs:
         arrow = "→ you " if m["is_outgoing"] else "← them"
         ts = (m["date"] or "")[:19].replace("T", " ")
@@ -374,7 +417,8 @@ def _show_human(data: dict) -> None:
 
 def run_show(args) -> int:
     return run_command(
-        "show", args,
+        "show",
+        args,
         runner=lambda: _show_runner(args),
         human_formatter=_show_human,
         audit_path=AUDIT_PATH,
@@ -382,6 +426,7 @@ def run_show(args) -> int:
 
 
 # ---------- search / list / get ----------
+
 
 def _positive_limit(value: int, *, default: int = 50) -> int:
     try:
@@ -392,12 +437,7 @@ def _positive_limit(value: int, *, default: int = 50) -> int:
 
 
 def _like_pattern(query: str) -> str:
-    escaped = (
-        query
-        .replace("\\", "\\\\")
-        .replace("%", "\\%")
-        .replace("_", "\\_")
-    )
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
 
 
@@ -475,7 +515,11 @@ def _search_runner(args) -> dict[str, Any]:
             case_clause = " AND instr(text, ?) > 0"
             params.append(query)
         params.append(_positive_limit(args.limit))
-        deleted_clause = "" if getattr(args, "include_deleted", False) else " AND (deleted = 0 OR deleted IS NULL)"
+        deleted_clause = (
+            ""
+            if getattr(args, "include_deleted", False)
+            else " AND (deleted = 0 OR deleted IS NULL)"
+        )
         rows = con.execute(
             f"""
             SELECT message_id, date, is_outgoing, text, media_type
@@ -520,7 +564,8 @@ def _search_human(data: dict) -> None:
 
 def run_search(args) -> int:
     return run_command(
-        "search", args,
+        "search",
+        args,
         runner=lambda: _search_runner(args),
         human_formatter=_search_human,
         audit_path=AUDIT_PATH,
@@ -579,7 +624,9 @@ def _list_human(data: dict) -> None:
         print(f"No cached messages for '{chat['title']}' matched the filters.")
         return
     direction = "oldest first" if data["order"] == "oldest_first" else "newest first"
-    print(f"=== {chat['title']}  chat_id {chat['chat_id']}  {len(msgs)} messages, {direction} ===\n")
+    print(
+        f"=== {chat['title']}  chat_id {chat['chat_id']}  {len(msgs)} messages, {direction} ===\n"
+    )
     for message in msgs:
         arrow = "you" if message["is_outgoing"] else "them"
         ts = (message["date"] or "")[:19].replace("T", " ")
@@ -594,7 +641,8 @@ def _list_human(data: dict) -> None:
 
 def run_list(args) -> int:
     return run_command(
-        "list-msgs", args,
+        "list-msgs",
+        args,
         runner=lambda: _list_runner(args),
         human_formatter=_list_human,
         audit_path=AUDIT_PATH,
@@ -605,7 +653,11 @@ def _get_runner(args) -> dict[str, Any]:
     con = connect_readonly(DB_PATH)
     try:
         chat_id, chat_title = resolve_chat_db(con, args.chat)
-        deleted_clause = "" if getattr(args, "include_deleted", False) else " AND (deleted = 0 OR deleted IS NULL)"
+        deleted_clause = (
+            ""
+            if getattr(args, "include_deleted", False)
+            else " AND (deleted = 0 OR deleted IS NULL)"
+        )
         row = con.execute(
             f"""
             SELECT chat_id, message_id, sender_id, date, text,
@@ -636,7 +688,8 @@ def _get_human(data: dict) -> None:
 
 def run_get(args) -> int:
     return run_command(
-        "get-msg", args,
+        "get-msg",
+        args,
         runner=lambda: _get_runner(args),
         human_formatter=_get_human,
         audit_path=AUDIT_PATH,
@@ -644,6 +697,7 @@ def run_get(args) -> int:
 
 
 # ---------- text writes ----------
+
 
 def _read_text_arg(value: str) -> str:
     text = sys.stdin.read() if value == "-" else value
@@ -725,7 +779,9 @@ async def _send_runner(args) -> dict[str, Any]:
             return data
 
         chat = _resolve_write_chat(con, args, args.chat)
-        reply_to, warnings = _topic_reply_to(reply_to=args.reply_to, topic=getattr(args, "topic", None))
+        reply_to, warnings = _topic_reply_to(
+            reply_to=args.reply_to, topic=getattr(args, "topic", None)
+        )
         payload = {
             "chat": chat,
             "text": text,
@@ -867,8 +923,7 @@ async def _forward_runner(args) -> dict[str, Any]:
         to_chat = _resolve_write_chat(con, args, args.to_chat)
         topic_id = getattr(args, "topic", None)
         method = (
-            "client(ForwardMessagesRequest)" if topic_id is not None
-            else "client.forward_messages"
+            "client(ForwardMessagesRequest)" if topic_id is not None else "client.forward_messages"
         )
         payload = {
             "from_chat": from_chat,
@@ -899,12 +954,14 @@ async def _forward_runner(args) -> dict[str, Any]:
                 # Raw request: high-level forward_messages() doesn't accept top_msg_id.
                 from_input = await client.get_input_entity(from_entity)
                 to_input = await client.get_input_entity(to_entity)
-                result = await client(ForwardMessagesRequest(
-                    from_peer=from_input,
-                    id=[int(args.message_id)],
-                    to_peer=to_input,
-                    top_msg_id=topic_id,
-                ))
+                result = await client(
+                    ForwardMessagesRequest(
+                        from_peer=from_input,
+                        id=[int(args.message_id)],
+                        to_peer=to_input,
+                        top_msg_id=topic_id,
+                    )
+                )
                 forwarded_id = None
                 for upd in getattr(result, "updates", []):
                     msg = getattr(upd, "message", None)
@@ -1148,6 +1205,7 @@ def run_mark_read(args) -> int:
 
 # ---------- delete-msg (Phase 9) ----------
 
+
 async def _delete_msg_runner(args) -> dict[str, Any]:
     from tgcli.safety import require_typed_confirm
 
@@ -1175,14 +1233,19 @@ async def _delete_msg_runner(args) -> dict[str, Any]:
                 f"AND message_id IN ({placeholders}) AND is_outgoing=1",
                 (chat["chat_id"], *args.message_ids),
             ).fetchone()[0]
-            for_everyone = (outgoing_count == len(args.message_ids))
+            for_everyone = outgoing_count == len(args.message_ids)
 
         if args.dry_run:
-            return _dry_run_envelope(command, request_id, {
-                "chat": chat, "message_ids": list(args.message_ids),
-                "for_everyone": for_everyone,
-                "telethon_method": "client.delete_messages",
-            })
+            return _dry_run_envelope(
+                command,
+                request_id,
+                {
+                    "chat": chat,
+                    "message_ids": list(args.message_ids),
+                    "for_everyone": for_everyone,
+                    "telethon_method": "client.delete_messages",
+                },
+            )
 
         _check_write_rate_limit()
         client = make_client(SESSION_PATH)
@@ -1192,8 +1255,11 @@ async def _delete_msg_runner(args) -> dict[str, Any]:
             results: list[dict[str, Any]] = []
             for mid in args.message_ids:
                 audit_pre(
-                    AUDIT_PATH, cmd=command, request_id=request_id,
-                    resolved_chat_id=chat["chat_id"], resolved_chat_title=chat["title"],
+                    AUDIT_PATH,
+                    cmd=command,
+                    request_id=request_id,
+                    resolved_chat_id=chat["chat_id"],
+                    resolved_chat_title=chat["title"],
                     payload_preview={"message_id": mid, "for_everyone": for_everyone},
                     telethon_method="client.delete_messages",
                     dry_run=False,
@@ -1209,9 +1275,14 @@ async def _delete_msg_runner(args) -> dict[str, Any]:
                         con.commit()
                     results.append({"message_id": mid, "ok": True, "deleted": True})
                 except Exception as exc:
-                    results.append({"message_id": mid, "ok": False,
-                                    "error": str(exc),
-                                    "error_code": type(exc).__name__})
+                    results.append(
+                        {
+                            "message_id": mid,
+                            "ok": False,
+                            "error": str(exc),
+                            "error_code": type(exc).__name__,
+                        }
+                    )
 
             succeeded = sum(1 for r in results if r["ok"])
             failed = len(results) - succeeded
@@ -1222,8 +1293,13 @@ async def _delete_msg_runner(args) -> dict[str, Any]:
                 "results": results,
                 "idempotent_replay": False,
             }
-            record_idempotency(con, args.idempotency_key, command, request_id,
-                               _write_result(command, request_id, data))
+            record_idempotency(
+                con,
+                args.idempotency_key,
+                command,
+                request_id,
+                _write_result(command, request_id, data),
+            )
             return data
         finally:
             await client.disconnect()
@@ -1236,6 +1312,7 @@ def run_delete_msg(args) -> int:
 
 
 # ---------- backfill ----------
+
 
 def _check_backfill_caps(db_path, *, current_msg_count: int, args) -> list[str]:
     """Raise BadArgs if caps exceeded; return warnings list at 80%+."""
@@ -1254,9 +1331,7 @@ def _check_backfill_caps(db_path, *, current_msg_count: int, args) -> list[str]:
         return warnings
     size_mb = size_bytes / (1024 * 1024)
     if size_mb >= max_db_mb:
-        raise BadArgs(
-            f"backfill refused: db size {size_mb:.0f}MB >= --max-db-size-mb {max_db_mb}"
-        )
+        raise BadArgs(f"backfill refused: db size {size_mb:.0f}MB >= --max-db-size-mb {max_db_mb}")
     if size_mb >= max_db_mb * 0.8:
         warnings.append(f"approaching --max-db-size-mb cap ({size_mb:.0f}/{max_db_mb}MB)")
     return warnings
@@ -1264,6 +1339,7 @@ def _check_backfill_caps(db_path, *, current_msg_count: int, args) -> list[str]:
 
 async def _backfill_runner(args) -> dict[str, Any]:
     from tgcli.safety import require_writes_not_readonly
+
     require_writes_not_readonly(args)
     client = make_client(SESSION_PATH)
     await client.start()
@@ -1303,17 +1379,22 @@ async def _backfill_runner(args) -> dict[str, Any]:
                 title = _display_title(dialog.entity)
                 skipped.append({"chat_id": dialog.id, "title": title, "error": str(e)})
                 if not quiet:
-                    print(f"  [{chat_count:>3}/{args.max_chats}] {title[:40]:40s}  SKIP ({e})", file=sys.stderr)
+                    print(
+                        f"  [{chat_count:>3}/{args.max_chats}] {title[:40]:40s}  SKIP ({e})",
+                        file=sys.stderr,
+                    )
                 continue
 
             msg_total += added
             media_total += media_added
-            per_chat.append({
-                "chat_id": dialog.id,
-                "title": _display_title(dialog.entity),
-                "messages_added": added,
-                "media_added": media_added,
-            })
+            per_chat.append(
+                {
+                    "chat_id": dialog.id,
+                    "title": _display_title(dialog.entity),
+                    "messages_added": added,
+                    "media_added": media_added,
+                }
+            )
             if not quiet:
                 media_note = f", {media_added} media" if args.download_media else ""
                 print(
@@ -1349,7 +1430,8 @@ def _backfill_human(data: dict) -> None:
 
 def run_backfill(args) -> int:
     return run_command(
-        "backfill", args,
+        "backfill",
+        args,
         runner=lambda: _backfill_runner(args),
         human_formatter=_backfill_human,
         audit_path=AUDIT_PATH,

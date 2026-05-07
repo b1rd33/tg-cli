@@ -255,12 +255,16 @@ def test_folder_create_dry_run_does_not_call_telethon(monkeypatch, tmp_path):
         raise AssertionError("dry-run must not create Telethon client")
 
     monkeypatch.setattr(chats, "make_client", fail_make_client)
-    data = asyncio.run(chats._folder_create_runner(_args(
-        title="Ops",
-        include_chat=[123],
-        dry_run=True,
-        idempotency_key="folder-create-dry-run",
-    )))
+    data = asyncio.run(
+        chats._folder_create_runner(
+            _args(
+                title="Ops",
+                include_chat=[123],
+                dry_run=True,
+                idempotency_key="folder-create-dry-run",
+            )
+        )
+    )
 
     assert data["dry_run"] is True
     assert data["payload"]["title"] == "Ops"
@@ -282,7 +286,14 @@ def test_folder_edit_preserves_existing_peers_and_updates_flags(monkeypatch, tmp
         async def __call__(self, request):
             self.requests.append(request)
             if request.__class__.__name__ == "GetDialogFiltersRequest":
-                return [_filter(folder_id=2, title="Ops", include=[FakeInputPeer(123)], exclude=[FakeInputPeer(456)])]
+                return [
+                    _filter(
+                        folder_id=2,
+                        title="Ops",
+                        include=[FakeInputPeer(123)],
+                        exclude=[FakeInputPeer(456)],
+                    )
+                ]
             return True
 
         async def get_input_entity(self, chat_id):
@@ -293,19 +304,27 @@ def test_folder_edit_preserves_existing_peers_and_updates_flags(monkeypatch, tmp
 
     fake = FakeClient()
     monkeypatch.setattr(chats, "make_client", lambda session_path: fake)
-    data = asyncio.run(chats._folder_edit_runner(_args(
-        folder_id=2,
-        title="Ops 2",
-        emoticon="✅",
-        include_chat=[789],
-        groups=False,
-        bots=True,
-        idempotency_key="folder-edit-1",
-    )))
+    data = asyncio.run(
+        chats._folder_edit_runner(
+            _args(
+                folder_id=2,
+                title="Ops 2",
+                emoticon="✅",
+                include_chat=[789],
+                groups=False,
+                bots=True,
+                idempotency_key="folder-edit-1",
+            )
+        )
+    )
 
     assert data["folder_id"] == 2
     assert data["edited"] is True
-    update = [request for request in fake.requests if request.__class__.__name__ == "UpdateDialogFilterRequest"][0]
+    update = [
+        request
+        for request in fake.requests
+        if request.__class__.__name__ == "UpdateDialogFilterRequest"
+    ][0]
     assert update.id == 2
     assert update.filter.title.text == "Ops 2"
     assert update.filter.emoticon == "✅"
@@ -394,7 +413,11 @@ def test_folder_add_chat_resolves_chat_and_replays_idempotency(monkeypatch, tmp_
     assert first["chat"] == {"chat_id": 123, "title": "Alpha Forum"}
     assert first["added"] is True
     assert second["idempotent_replay"] is True
-    updates = [request for request in fake.requests if request.__class__.__name__ == "UpdateDialogFilterRequest"]
+    updates = [
+        request
+        for request in fake.requests
+        if request.__class__.__name__ == "UpdateDialogFilterRequest"
+    ]
     assert len(updates) == 1
     assert [peer.peer_id for peer in updates[0].filter.include_peers] == [123]
 
@@ -425,15 +448,23 @@ def test_folder_remove_chat_warns_when_chat_is_excluded(monkeypatch, tmp_path):
 
     fake = FakeClient()
     monkeypatch.setattr(chats, "make_client", lambda session_path: fake)
-    data = asyncio.run(chats._folder_remove_chat_runner(_args(
-        folder_id=2,
-        chat="@alpha_forum",
-        idempotency_key="folder-remove-1",
-    )))
+    data = asyncio.run(
+        chats._folder_remove_chat_runner(
+            _args(
+                folder_id=2,
+                chat="@alpha_forum",
+                idempotency_key="folder-remove-1",
+            )
+        )
+    )
 
     assert data["removed"] is False
     assert data["warnings"] == ["chat was present in exclude_peers, not include_peers"]
-    update = [request for request in fake.requests if request.__class__.__name__ == "UpdateDialogFilterRequest"][0]
+    update = [
+        request
+        for request in fake.requests
+        if request.__class__.__name__ == "UpdateDialogFilterRequest"
+    ][0]
     assert update.filter.include_peers == []
     assert [peer.peer_id for peer in update.filter.exclude_peers] == [123]
 
@@ -453,18 +484,39 @@ def test_folders_reorder_uses_order_request_and_replays(monkeypatch, tmp_path):
         async def __call__(self, request):
             self.requests.append(request)
             from telethon.tl.functions.messages import GetDialogFiltersRequest
-            from telethon.tl.types import (DialogFilter, DialogFilterDefault,
-                                            TextWithEntities)
+            from telethon.tl.types import DialogFilter, DialogFilterDefault, TextWithEntities
+
             if isinstance(request, GetDialogFiltersRequest):
-                return type("DF", (), {"filters": [
-                    DialogFilterDefault(),
-                    DialogFilter(id=2, title=TextWithEntities(text="A", entities=[]),
-                                 pinned_peers=[], include_peers=[], exclude_peers=[]),
-                    DialogFilter(id=3, title=TextWithEntities(text="B", entities=[]),
-                                 pinned_peers=[], include_peers=[], exclude_peers=[]),
-                    DialogFilter(id=4, title=TextWithEntities(text="C", entities=[]),
-                                 pinned_peers=[], include_peers=[], exclude_peers=[]),
-                ]})()
+                return type(
+                    "DF",
+                    (),
+                    {
+                        "filters": [
+                            DialogFilterDefault(),
+                            DialogFilter(
+                                id=2,
+                                title=TextWithEntities(text="A", entities=[]),
+                                pinned_peers=[],
+                                include_peers=[],
+                                exclude_peers=[],
+                            ),
+                            DialogFilter(
+                                id=3,
+                                title=TextWithEntities(text="B", entities=[]),
+                                pinned_peers=[],
+                                include_peers=[],
+                                exclude_peers=[],
+                            ),
+                            DialogFilter(
+                                id=4,
+                                title=TextWithEntities(text="C", entities=[]),
+                                pinned_peers=[],
+                                include_peers=[],
+                                exclude_peers=[],
+                            ),
+                        ]
+                    },
+                )()
             return True
 
         async def disconnect(self):
@@ -481,7 +533,8 @@ def test_folders_reorder_uses_order_request_and_replays(monkeypatch, tmp_path):
     assert second["idempotent_replay"] is True
     # Two requests on first call (GetDialogFilters validation + UpdateDialogFiltersOrder),
     # zero on second call (replay):
-    update_calls = [r for r in fake.requests
-                    if r.__class__.__name__ == "UpdateDialogFiltersOrderRequest"]
+    update_calls = [
+        r for r in fake.requests if r.__class__.__name__ == "UpdateDialogFiltersOrderRequest"
+    ]
     assert len(update_calls) == 1
     assert update_calls[0].order == [2, 3, 4]

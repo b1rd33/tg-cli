@@ -1,4 +1,5 @@
 """Tests for tgcli.env — the .env loader."""
+
 from __future__ import annotations
 
 import os

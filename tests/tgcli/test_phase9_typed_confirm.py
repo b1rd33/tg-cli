@@ -5,6 +5,7 @@ RESOLVED id (post-resolver), not the raw user selector. An agent that thinks
 it's deleting in chat A but whose selector resolves to chat B must hit a
 clean rejection here, not silent destruction in the wrong chat.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,7 +27,7 @@ def test_typed_confirm_rejects_when_unset():
 def test_typed_confirm_rejects_mismatched_value():
     """The riskiest case: agent typed --confirm with the raw selector but
     the resolver returned a different id. Must reject."""
-    with pytest.raises(BadArgs, match="must equal.*chat_id"):
+    with pytest.raises(BadArgs, match=r"must equal.*chat_id"):
         require_typed_confirm(_args(confirm="Hamid"), expected=289840388, slot="chat_id")
 
 
