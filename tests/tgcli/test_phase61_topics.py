@@ -240,12 +240,21 @@ def test_topic_edit_uses_edit_forum_topic_request(monkeypatch, tmp_path):
 
     assert data["topic_id"] == 55
     assert data["edited"] is True
-    request = [call[1] for call in fake.calls if call[0] == "request"][0]
-    assert request.topic_id == 55
-    assert request.title == "Renamed"
-    assert request.icon_emoji_id == 999
-    assert request.closed is True
-    assert request.hidden is False
+    # When title/icon and closed/hidden are both set, runner splits into two
+    # EditForumTopicRequest calls to avoid Telegram's TOPIC_CLOSE_SEPARATELY.
+    assert data["telethon_calls"] == 2
+    requests = [call[1] for call in fake.calls if call[0] == "request"]
+    assert len(requests) == 2
+    # First call: content (title + icon).
+    assert requests[0].topic_id == 55
+    assert requests[0].title == "Renamed"
+    assert requests[0].icon_emoji_id == 999
+    assert requests[0].closed is None  # state not in this call
+    # Second call: state (closed + hidden).
+    assert requests[1].topic_id == 55
+    assert requests[1].title is None  # content not in this call
+    assert requests[1].closed is True
+    assert requests[1].hidden is False
 
 
 def test_topic_pin_and_unpin_use_update_pinned_forum_topic_request(monkeypatch, tmp_path):

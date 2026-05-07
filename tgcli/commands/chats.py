@@ -1174,8 +1174,34 @@ async def _topic_edit_runner(args) -> dict[str, Any]:
         await client.start()
         try:
             entity = await client.get_entity(chat["chat_id"])
-            await client(EditForumTopicRequest(peer=entity, topic_id=int(args.topic_id), **mutations))
-            data = {"chat": chat, "topic_id": int(args.topic_id), "edited": True, "idempotent_replay": False}
+            # Telegram returns TOPIC_CLOSE_SEPARATELY when an Edit request
+            # combines title/icon changes with closed/hidden toggles. Split
+            # automatically: first the renaming, then the state change.
+            content_keys = {"title", "icon_emoji_id"}
+            state_keys = {"closed", "hidden"}
+            content_mutations = {k: v for k, v in mutations.items() if k in content_keys}
+            state_mutations = {k: v for k, v in mutations.items() if k in state_keys}
+            calls_made = 0
+            if content_mutations and state_mutations:
+                await client(EditForumTopicRequest(
+                    peer=entity, topic_id=int(args.topic_id), **content_mutations,
+                ))
+                await client(EditForumTopicRequest(
+                    peer=entity, topic_id=int(args.topic_id), **state_mutations,
+                ))
+                calls_made = 2
+            else:
+                await client(EditForumTopicRequest(
+                    peer=entity, topic_id=int(args.topic_id), **mutations,
+                ))
+                calls_made = 1
+            data = {
+                "chat": chat,
+                "topic_id": int(args.topic_id),
+                "edited": True,
+                "telethon_calls": calls_made,
+                "idempotent_replay": False,
+            }
             record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
             return data
         finally:
