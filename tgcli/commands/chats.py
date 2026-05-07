@@ -5,18 +5,43 @@ import argparse
 import json
 from typing import Any
 
+from telethon.errors.rpcerrorlist import (
+    BroadcastForbiddenError,
+    ChannelForumMissingError,
+)
+from telethon.tl.functions.messages import (
+    CreateForumTopicRequest,
+    EditForumTopicRequest,
+    GetForumTopicsRequest,
+    UpdatePinnedForumTopicRequest,
+)
+
 from tgcli.client import make_client
 from tgcli.commands._common import (
     AUDIT_PATH,
     DB_PATH,
     SESSION_PATH,
     add_output_flags,
+    add_write_flags,
     decode_raw_json,
 )
-from tgcli.commands.messages import _chat_kind, _display_title, _upsert_chat
+from tgcli.commands.messages import (
+    _chat_kind,
+    _check_write_rate_limit,
+    _display_title,
+    _dry_run_envelope,
+    _request_id,
+    _resolve_write_chat,
+    _run_write_command,
+    _upsert_chat,
+    _write_result,
+)
 from tgcli.db import connect, connect_readonly
 from tgcli.dispatch import run_command
+from tgcli.idempotency import lookup as lookup_idempotency
+from tgcli.idempotency import record as record_idempotency
 from tgcli.resolve import NotFound, resolve_chat_db
+from tgcli.safety import BadArgs, audit_pre, require_write_allowed
 
 
 def register(sub: argparse._SubParsersAction) -> None:
@@ -32,6 +57,349 @@ def register(sub: argparse._SubParsersAction) -> None:
     info.add_argument("chat", help="Chat selector resolved from the local DB")
     add_output_flags(info)
     info.set_defaults(func=run_chats_info)
+
+    topics = sub.add_parser("topics-list", help="List forum topics in a supergroup")
+    topics.add_argument("chat", help="Forum supergroup selector resolved from the local DB")
+    topics.add_argument("--limit", type=int, default=50, help="Number of topics (default 50)")
+    topics.add_argument("--query", default=None, help="Search topic titles")
+    add_output_flags(topics)
+    topics.set_defaults(func=run_topics_list)
+
+    create = sub.add_parser("topic-create", help="Create a forum topic")
+    create.add_argument("chat", help="Forum supergroup selector resolved from the local DB")
+    create.add_argument("title", help="Topic title")
+    create.add_argument("--icon-emoji-id", type=int, default=None, help="Telegram custom emoji id")
+    add_write_flags(create, destructive=False)
+    add_output_flags(create)
+    create.set_defaults(func=run_topic_create)
+
+    edit = sub.add_parser("topic-edit", help="Edit a forum topic")
+    edit.add_argument("chat", help="Forum supergroup selector resolved from the local DB")
+    edit.add_argument("topic_id", type=int, help="Topic root message id")
+    edit.add_argument("--title", default=None, help="New topic title")
+    edit.add_argument("--icon-emoji-id", type=int, default=None, help="Telegram custom emoji id")
+    state = edit.add_mutually_exclusive_group()
+    state.add_argument("--closed", action="store_true", help="Close the topic")
+    state.add_argument("--reopen", action="store_true", help="Reopen the topic")
+    visibility = edit.add_mutually_exclusive_group()
+    visibility.add_argument("--hidden", action="store_true", help="Hide the topic")
+    visibility.add_argument("--unhidden", action="store_true", help="Unhide the topic")
+    add_write_flags(edit, destructive=False)
+    add_output_flags(edit)
+    edit.set_defaults(func=run_topic_edit)
+
+    pin = sub.add_parser("topic-pin", help="Pin a forum topic")
+    pin.add_argument("chat", help="Forum supergroup selector resolved from the local DB")
+    pin.add_argument("topic_id", type=int, help="Topic root message id")
+    add_write_flags(pin, destructive=False)
+    add_output_flags(pin)
+    pin.set_defaults(func=run_topic_pin)
+
+    unpin = sub.add_parser("topic-unpin", help="Unpin a forum topic")
+    unpin.add_argument("chat", help="Forum supergroup selector resolved from the local DB")
+    unpin.add_argument("topic_id", type=int, help="Topic root message id")
+    add_write_flags(unpin, destructive=False)
+    add_output_flags(unpin)
+    unpin.set_defaults(func=run_topic_unpin)
+
+
+def _topic_edit_mutations(args) -> dict[str, Any]:
+    if getattr(args, "closed", False) and getattr(args, "reopen", False):
+        raise BadArgs("--closed and --reopen are mutually exclusive")
+    if getattr(args, "hidden", False) and getattr(args, "unhidden", False):
+        raise BadArgs("--hidden and --unhidden are mutually exclusive")
+
+    mutations: dict[str, Any] = {}
+    if args.title is not None:
+        if str(args.title).strip() == "":
+            raise BadArgs("topic title cannot be empty")
+        mutations["title"] = args.title
+    if args.icon_emoji_id is not None:
+        mutations["icon_emoji_id"] = int(args.icon_emoji_id)
+    if getattr(args, "closed", False):
+        mutations["closed"] = True
+    if getattr(args, "reopen", False):
+        mutations["closed"] = False
+    if getattr(args, "hidden", False):
+        mutations["hidden"] = True
+    if getattr(args, "unhidden", False):
+        mutations["hidden"] = False
+    if not mutations:
+        raise BadArgs("nothing to edit")
+    return mutations
+
+
+# Concrete Telethon error classes for forum detection. Avoid string-matching:
+# the server's error_message text can change without notice, but the class
+# names are stable.
+_NON_FORUM_ERRORS: tuple[type[BaseException], ...] = (
+    ChannelForumMissingError,
+    BroadcastForbiddenError,
+)
+
+
+def _is_non_forum_error(exc: BaseException) -> bool:
+    return isinstance(exc, _NON_FORUM_ERRORS)
+
+
+def _topic_summary(topic) -> dict[str, Any]:
+    return {
+        "topic_id": int(getattr(topic, "id", getattr(topic, "topic_id", 0))),
+        "title": getattr(topic, "title", None),
+        "icon_emoji_id": getattr(topic, "icon_emoji_id", None),
+        "closed": bool(getattr(topic, "closed", False)),
+        "hidden": bool(getattr(topic, "hidden", False)),
+        "top_message_id": getattr(topic, "top_message", getattr(topic, "top_message_id", None)),
+        "unread_count": int(getattr(topic, "unread_count", 0) or 0),
+    }
+
+
+async def _topics_list_runner(args) -> dict[str, Any]:
+    con = connect_readonly(DB_PATH)
+    try:
+        chat_id, chat_title = resolve_chat_db(con, args.chat)
+    finally:
+        con.close()
+
+    client = make_client(SESSION_PATH)
+    await client.start()
+    try:
+        entity = await client.get_entity(chat_id)
+        try:
+            result = await client(
+                GetForumTopicsRequest(
+                    peer=entity,
+                    offset_date=None,
+                    offset_id=0,
+                    offset_topic=0,
+                    limit=max(int(args.limit), 1),
+                    q=args.query,
+                )
+            )
+        except Exception as exc:
+            if _is_non_forum_error(exc):
+                raise BadArgs("not a forum supergroup") from exc
+            raise
+    finally:
+        await client.disconnect()
+
+    return {
+        "chat": {"chat_id": chat_id, "title": chat_title},
+        "limit": max(int(args.limit), 1),
+        "query": args.query,
+        "topics": [_topic_summary(topic) for topic in getattr(result, "topics", [])],
+    }
+
+
+def run_topics_list(args) -> int:
+    return run_command(
+        "topics-list",
+        args,
+        runner=lambda: _topics_list_runner(args),
+        human_formatter=_topics_human,
+        audit_path=AUDIT_PATH,
+    )
+
+
+def _topics_human(data: dict) -> None:
+    print(f"{data['chat']['title']} topics ({len(data['topics'])})")
+    for topic in data["topics"]:
+        state = []
+        if topic["closed"]:
+            state.append("closed")
+        if topic["hidden"]:
+            state.append("hidden")
+        suffix = f" [{' '.join(state)}]" if state else ""
+        print(f"  {topic['topic_id']:>8}  {topic['title']}{suffix}")
+
+
+def _created_topic_from_update(result, fallback_title: str) -> tuple[int, str]:
+    for update in getattr(result, "updates", []) or []:
+        topic_id = getattr(update, "id", None)
+        if topic_id is None:
+            topic_id = getattr(update, "topic_id", None)
+        if topic_id is not None:
+            return int(topic_id), getattr(update, "title", fallback_title)
+    raise BadArgs("topic create response did not include topic_id")
+
+
+async def _topic_create_runner(args) -> dict[str, Any]:
+    command = "topic-create"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    if str(args.title).strip() == "":
+        raise BadArgs("topic title cannot be empty")
+
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+        chat = _resolve_write_chat(con, args, args.chat)
+        payload = {
+            "chat": chat,
+            "title": args.title,
+            "icon_emoji_id": args.icon_emoji_id,
+            "telethon_method": "CreateForumTopicRequest",
+        }
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=chat["chat_id"],
+            resolved_chat_title=chat["title"],
+            payload_preview=payload,
+            telethon_method="CreateForumTopicRequest",
+            dry_run=False,
+        )
+
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            entity = await client.get_entity(chat["chat_id"])
+            result = await client(
+                CreateForumTopicRequest(
+                    peer=entity,
+                    title=args.title,
+                    icon_emoji_id=args.icon_emoji_id,
+                )
+            )
+            topic_id, title = _created_topic_from_update(result, args.title)
+            data = {
+                "topic_id": topic_id,
+                "title": title,
+                "chat": chat,
+                "idempotent_replay": False,
+            }
+            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+def run_topic_create(args) -> int:
+    return _run_write_command("topic-create", args, _topic_create_runner)
+
+
+async def _topic_edit_runner(args) -> dict[str, Any]:
+    command = "topic-edit"
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    mutations = _topic_edit_mutations(args)
+
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+
+        chat = _resolve_write_chat(con, args, args.chat)
+        payload = {
+            "chat": chat,
+            "topic_id": int(args.topic_id),
+            **mutations,
+            "telethon_method": "EditForumTopicRequest",
+        }
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=chat["chat_id"],
+            resolved_chat_title=chat["title"],
+            payload_preview=payload,
+            telethon_method="EditForumTopicRequest",
+            dry_run=False,
+        )
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            entity = await client.get_entity(chat["chat_id"])
+            await client(EditForumTopicRequest(peer=entity, topic_id=int(args.topic_id), **mutations))
+            data = {"chat": chat, "topic_id": int(args.topic_id), "edited": True, "idempotent_replay": False}
+            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+async def _topic_pin_state_runner(args, *, command: str, pinned: bool) -> dict[str, Any]:
+    request_id = _request_id(args)
+    require_write_allowed(args)
+    con = connect(DB_PATH)
+    try:
+        replay = lookup_idempotency(con, args.idempotency_key, command)
+        if replay is not None:
+            data = dict(replay["data"])
+            data["idempotent_replay"] = True
+            return data
+
+        chat = _resolve_write_chat(con, args, args.chat)
+        payload = {
+            "chat": chat,
+            "topic_id": int(args.topic_id),
+            "pinned": pinned,
+            "telethon_method": "UpdatePinnedForumTopicRequest",
+        }
+        if args.dry_run:
+            return _dry_run_envelope(command, request_id, payload)
+        _check_write_rate_limit()
+        audit_pre(
+            AUDIT_PATH,
+            cmd=command,
+            request_id=request_id,
+            resolved_chat_id=chat["chat_id"],
+            resolved_chat_title=chat["title"],
+            payload_preview=payload,
+            telethon_method="UpdatePinnedForumTopicRequest",
+            dry_run=False,
+        )
+        client = make_client(SESSION_PATH)
+        await client.start()
+        try:
+            entity = await client.get_entity(chat["chat_id"])
+            await client(UpdatePinnedForumTopicRequest(peer=entity, topic_id=int(args.topic_id), pinned=pinned))
+            data = {"chat": chat, "topic_id": int(args.topic_id), "pinned": pinned, "idempotent_replay": False}
+            record_idempotency(con, args.idempotency_key, command, request_id, _write_result(command, request_id, data))
+            return data
+        finally:
+            await client.disconnect()
+    finally:
+        con.close()
+
+
+async def _topic_pin_runner(args) -> dict[str, Any]:
+    return await _topic_pin_state_runner(args, command="topic-pin", pinned=True)
+
+
+async def _topic_unpin_runner(args) -> dict[str, Any]:
+    return await _topic_pin_state_runner(args, command="topic-unpin", pinned=False)
+
+
+def run_topic_edit(args) -> int:
+    return _run_write_command("topic-edit", args, _topic_edit_runner)
+
+
+def run_topic_pin(args) -> int:
+    return _run_write_command("topic-pin", args, _topic_pin_runner)
+
+
+def run_topic_unpin(args) -> int:
+    return _run_write_command("topic-unpin", args, _topic_unpin_runner)
 
 
 async def _discover_runner(args) -> dict[str, Any]:

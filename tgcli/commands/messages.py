@@ -21,7 +21,7 @@ from telethon.tl.types import (
     MessageMediaWebPage,
     User,
 )
-from telethon.tl.functions.messages import SendReactionRequest
+from telethon.tl.functions.messages import ForwardMessagesRequest, SendReactionRequest
 from telethon.tl.types import ReactionEmoji
 
 from tgcli.client import make_client
@@ -91,6 +91,8 @@ def register(sub: argparse._SubParsersAction) -> None:
     snd.add_argument("text", help="Message text, or '-' to read from stdin")
     snd.add_argument("--reply-to", type=int, default=None,
                      help="Reply to this Telegram message id")
+    snd.add_argument("--topic", type=int, default=None,
+                     help="Forum topic root message id; ignored when --reply-to is provided")
     snd.add_argument("--silent", action="store_true",
                      help="Send without notification")
     snd.add_argument("--no-webpage", action="store_true",
@@ -111,6 +113,8 @@ def register(sub: argparse._SubParsersAction) -> None:
     fwd.add_argument("from_chat", help="Source chat id, @username, or fuzzy title with --fuzzy")
     fwd.add_argument("message_id", type=int, help="Telegram message id to forward")
     fwd.add_argument("to_chat", help="Destination chat id, @username, or fuzzy title with --fuzzy")
+    fwd.add_argument("--topic", type=int, default=None,
+                     help="Destination forum topic root message id (forwards into a topic in the destination chat)")
     add_write_flags(fwd, destructive=False)
     add_output_flags(fwd)
     fwd.set_defaults(func=run_forward)
@@ -631,6 +635,14 @@ def _dry_run_envelope(command: str, request_id: str, payload: dict[str, Any]) ->
     }
 
 
+def _topic_reply_to(*, reply_to: int | None, topic: int | None) -> tuple[int | None, list[str]]:
+    if reply_to is not None and topic is not None:
+        return reply_to, ["--topic ignored because --reply-to was provided"]
+    if reply_to is not None:
+        return reply_to, []
+    return topic, []
+
+
 def _write_result(command: str, request_id: str, data: dict[str, Any]) -> dict[str, Any]:
     return {
         "ok": True,
@@ -676,13 +688,16 @@ async def _send_runner(args) -> dict[str, Any]:
             return data
 
         chat = _resolve_write_chat(con, args, args.chat)
+        reply_to, warnings = _topic_reply_to(reply_to=args.reply_to, topic=getattr(args, "topic", None))
         payload = {
             "chat": chat,
             "text": text,
-            "reply_to": args.reply_to,
+            "reply_to": reply_to,
+            "topic_id": getattr(args, "topic", None),
             "silent": bool(args.silent),
             "link_preview": not bool(args.no_webpage),
             "telethon_method": "client.send_message",
+            "warnings": warnings,
         }
         if args.dry_run:
             return _dry_run_envelope(command, request_id, payload)
@@ -706,7 +721,7 @@ async def _send_runner(args) -> dict[str, Any]:
             sent = await client.send_message(
                 entity,
                 text,
-                reply_to=args.reply_to,
+                reply_to=reply_to,
                 silent=bool(args.silent),
                 link_preview=not bool(args.no_webpage),
             )
@@ -714,6 +729,9 @@ async def _send_runner(args) -> dict[str, Any]:
                 "chat": chat,
                 "message_id": int(sent.id),
                 "text": text,
+                "reply_to": reply_to,
+                "topic_id": getattr(args, "topic", None),
+                "warnings": warnings,
                 "idempotent_replay": False,
             }
             record_idempotency(
@@ -810,11 +828,17 @@ async def _forward_runner(args) -> dict[str, Any]:
             return data
         from_chat = _resolve_write_chat(con, args, args.from_chat)
         to_chat = _resolve_write_chat(con, args, args.to_chat)
+        topic_id = getattr(args, "topic", None)
+        method = (
+            "client(ForwardMessagesRequest)" if topic_id is not None
+            else "client.forward_messages"
+        )
         payload = {
             "from_chat": from_chat,
             "to_chat": to_chat,
             "message_id": int(args.message_id),
-            "telethon_method": "client.forward_messages",
+            "topic_id": topic_id,
+            "telethon_method": method,
         }
         if args.dry_run:
             return _dry_run_envelope(command, request_id, payload)
@@ -826,7 +850,7 @@ async def _forward_runner(args) -> dict[str, Any]:
             resolved_chat_id=to_chat["chat_id"],
             resolved_chat_title=to_chat["title"],
             payload_preview=payload,
-            telethon_method="client.forward_messages",
+            telethon_method=method,
             dry_run=False,
         )
         client = make_client(SESSION_PATH)
@@ -834,16 +858,37 @@ async def _forward_runner(args) -> dict[str, Any]:
         try:
             from_entity = await client.get_entity(from_chat["chat_id"])
             to_entity = await client.get_entity(to_chat["chat_id"])
-            forwarded = await client.forward_messages(
-                to_entity,
-                messages=int(args.message_id),
-                from_peer=from_entity,
-            )
+            if topic_id is not None:
+                # Raw request: high-level forward_messages() doesn't accept top_msg_id.
+                from_input = await client.get_input_entity(from_entity)
+                to_input = await client.get_input_entity(to_entity)
+                result = await client(ForwardMessagesRequest(
+                    from_peer=from_input,
+                    id=[int(args.message_id)],
+                    to_peer=to_input,
+                    top_msg_id=topic_id,
+                ))
+                forwarded_id = None
+                for upd in getattr(result, "updates", []):
+                    msg = getattr(upd, "message", None)
+                    if msg is not None:
+                        forwarded_id = msg.id
+                        break
+                if forwarded_id is None:
+                    raise BadArgs("forward response did not include message_id")
+            else:
+                forwarded = await client.forward_messages(
+                    to_entity,
+                    messages=int(args.message_id),
+                    from_peer=from_entity,
+                )
+                forwarded_id = forwarded.id if not isinstance(forwarded, list) else forwarded[0].id
             data = {
                 "from_chat": from_chat,
                 "to_chat": to_chat,
                 "source_message_id": int(args.message_id),
-                "message_id": int(forwarded.id),
+                "message_id": int(forwarded_id),
+                "topic_id": topic_id,
                 "idempotent_replay": False,
             }
             record_idempotency(
