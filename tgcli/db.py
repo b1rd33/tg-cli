@@ -52,6 +52,19 @@ CREATE TABLE IF NOT EXISTS tg_contacts (
     is_mutual  INTEGER,
     synced_at  TEXT
 );
+
+CREATE TABLE IF NOT EXISTS tg_me (
+    key          TEXT PRIMARY KEY CHECK (key = 'self'),
+    user_id      INTEGER,
+    username     TEXT,
+    phone        TEXT,
+    first_name   TEXT,
+    last_name    TEXT,
+    display_name TEXT,
+    is_bot       INTEGER,
+    cached_at    TEXT,
+    raw_json     TEXT
+);
 """
 
 

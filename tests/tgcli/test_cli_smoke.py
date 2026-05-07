@@ -129,3 +129,155 @@ def test_min_msgs_flags_are_accepted(tmp_path):
     )
     assert contacts_result.returncode == 0, f"stderr: {contacts_result.stderr}"
     assert _json.loads(contacts_result.stdout)["ok"] is True
+
+
+def test_phase4_me_offline_smoke(tmp_path):
+    from tgcli.db import connect
+
+    db = tmp_path / "seeded.sqlite"
+    con = connect(db)
+    con.execute(
+        """
+        INSERT INTO tg_me(
+            key, user_id, username, phone, first_name, last_name,
+            display_name, is_bot, cached_at, raw_json
+        ) VALUES ('self', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            42,
+            "alice",
+            "15550001000",
+            "Alice",
+            "Example",
+            "Alice Example",
+            0,
+            "2026-05-07T10:00:00+00:00",
+            "{\"id\": 42}",
+        ),
+    )
+    con.commit()
+    con.close()
+
+    env = {
+        **_os.environ,
+        "TG_API_ID": "1",
+        "TG_API_HASH": "x",
+        "TG_DB_PATH": str(db),
+        "TG_AUDIT_PATH": str(tmp_path / "audit.log"),
+    }
+    result = _subprocess.run(
+        [str(PYTHON), "-m", "tgcli", "me", "--offline", "--json"],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    payload = _json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["data"]["source"] == "cache"
+    assert payload["data"]["user_id"] == 42
+
+
+def test_phase4_message_read_commands_smoke(tmp_path):
+    from tgcli.db import connect
+
+    db = tmp_path / "seeded.sqlite"
+    con = connect(db)
+    con.execute(
+        "INSERT INTO tg_chats(chat_id, type, title, username) VALUES (?, ?, ?, ?)",
+        (123, "user", "Alpha Chat", "alpha"),
+    )
+    con.execute(
+        """
+        INSERT INTO tg_messages(
+            chat_id, message_id, sender_id, date, text,
+            is_outgoing, reply_to_msg_id, has_media, media_type, media_path, raw_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            123,
+            1,
+            11,
+            "2026-05-01T10:00:00",
+            "Hello from cache",
+            0,
+            None,
+            0,
+            None,
+            None,
+            "{\"id\": 1}",
+        ),
+    )
+    con.commit()
+    con.close()
+
+    env = {
+        **_os.environ,
+        "TG_API_ID": "1",
+        "TG_API_HASH": "x",
+        "TG_DB_PATH": str(db),
+        "TG_AUDIT_PATH": str(tmp_path / "audit.log"),
+    }
+
+    commands = [
+        [str(PYTHON), "-m", "tgcli", "search", "@alpha", "Hello", "--json"],
+        [str(PYTHON), "-m", "tgcli", "list-msgs", "@alpha", "--since", "2026-05-01", "--json"],
+        [str(PYTHON), "-m", "tgcli", "get-msg", "@alpha", "1", "--json"],
+    ]
+    for command in commands:
+        result = _subprocess.run(
+            command,
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode == 0, f"command: {command} stderr: {result.stderr}"
+        payload = _json.loads(result.stdout)
+        assert payload["ok"] is True
+
+
+def test_phase4_chats_info_smoke(tmp_path):
+    from tgcli.db import connect
+
+    db = tmp_path / "seeded.sqlite"
+    con = connect(db)
+    con.execute(
+        """
+        INSERT INTO tg_chats(
+            chat_id, type, title, username, raw_json
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            900,
+            "supergroup",
+            "Alpha Group",
+            "alpha_group",
+            "{\"id\": 900, \"participants_count\": 123}",
+        ),
+    )
+    con.commit()
+    con.close()
+
+    env = {
+        **_os.environ,
+        "TG_API_ID": "1",
+        "TG_API_HASH": "x",
+        "TG_DB_PATH": str(db),
+        "TG_AUDIT_PATH": str(tmp_path / "audit.log"),
+    }
+    result = _subprocess.run(
+        [str(PYTHON), "-m", "tgcli", "chats-info", "@alpha_group", "--json"],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    payload = _json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["data"]["chat_id"] == 900
+    assert payload["data"]["member_count"] == 123
+
+

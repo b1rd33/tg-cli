@@ -25,10 +25,11 @@ from telethon.tl.types import (
 from tgcli.client import make_client
 from tgcli.commands._common import (
     AUDIT_PATH, DB_PATH, MEDIA_DIR, ROOT, SESSION_PATH, add_output_flags,
+    decode_raw_json,
 )
 from tgcli.db import connect, connect_readonly
 from tgcli.dispatch import run_command
-from tgcli.resolve import resolve_chat_db
+from tgcli.resolve import NotFound, resolve_chat_db
 from tgcli.safety import BadArgs
 
 
@@ -44,6 +45,35 @@ def register(sub: argparse._SubParsersAction) -> None:
                     help="Oldest first instead of newest first")
     add_output_flags(sh)
     sh.set_defaults(func=run_show)
+
+    se = sub.add_parser("search", help="Search cached messages in one chat")
+    se.add_argument("chat", help="Chat selector resolved from the local DB")
+    se.add_argument("query", help="Text query to search in cached message text")
+    se.add_argument("--limit", type=int, default=50,
+                    help="Number of messages (default 50)")
+    se.add_argument("--case-sensitive", action="store_true",
+                    help="Require exact case match after the DB LIKE scan")
+    add_output_flags(se)
+    se.set_defaults(func=run_search)
+
+    ls = sub.add_parser("list-msgs", help="List cached messages from one chat")
+    ls.add_argument("chat", help="Chat selector resolved from the local DB")
+    ls.add_argument("--limit", type=int, default=50,
+                    help="Number of messages (default 50)")
+    ls.add_argument("--since", default=None,
+                    help="Only include messages on or after YYYY-MM-DD")
+    ls.add_argument("--until", default=None,
+                    help="Only include messages on or before YYYY-MM-DD")
+    ls.add_argument("--reverse", action="store_true",
+                    help="Oldest first instead of newest first")
+    add_output_flags(ls)
+    ls.set_defaults(func=run_list)
+
+    gm = sub.add_parser("get-msg", help="Get one cached message by id")
+    gm.add_argument("chat", help="Chat selector resolved from the local DB")
+    gm.add_argument("message_id", type=int, help="Cached Telegram message id")
+    add_output_flags(gm)
+    gm.set_defaults(func=run_get)
 
     bf = sub.add_parser("backfill", help="Pull historical messages")
     bf.add_argument("--per-chat", type=int, default=200)
@@ -242,6 +272,264 @@ def run_show(args) -> int:
         "show", args,
         runner=lambda: _show_runner(args),
         human_formatter=_show_human,
+        audit_path=AUDIT_PATH,
+    )
+
+
+# ---------- search / list / get ----------
+
+def _positive_limit(value: int, *, default: int = 50) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(parsed, 1)
+
+
+def _like_pattern(query: str) -> str:
+    escaped = (
+        query
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+    return f"%{escaped}%"
+
+
+def _date_start(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise BadArgs(f"Invalid --since date {value!r}; expected YYYY-MM-DD") from exc
+    return f"{value}T00:00:00"
+
+
+def _date_end(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise BadArgs(f"Invalid --until date {value!r}; expected YYYY-MM-DD") from exc
+    return f"{value}T23:59:59"
+
+
+def _message_summary(row) -> dict[str, Any]:
+    message_id, date, is_outgoing, text, media_type = row
+    return {
+        "message_id": int(message_id),
+        "date": date,
+        "is_outgoing": bool(is_outgoing),
+        "text": text or None,
+        "media_type": media_type,
+    }
+
+
+def _full_message(row) -> dict[str, Any]:
+    (
+        chat_id,
+        message_id,
+        sender_id,
+        date,
+        text,
+        is_outgoing,
+        reply_to_msg_id,
+        has_media,
+        media_type,
+        media_path,
+        raw_json,
+    ) = row
+    return {
+        "chat_id": int(chat_id),
+        "message_id": int(message_id),
+        "sender_id": sender_id,
+        "date": date,
+        "text": text or None,
+        "is_outgoing": bool(is_outgoing),
+        "reply_to_msg_id": reply_to_msg_id,
+        "has_media": bool(has_media),
+        "media_type": media_type,
+        "media_path": media_path,
+        "raw_json": decode_raw_json(raw_json),
+    }
+
+
+def _search_runner(args) -> dict[str, Any]:
+    query = str(args.query)
+    if query == "":
+        raise BadArgs("Search query cannot be empty")
+
+    con = connect_readonly(DB_PATH)
+    try:
+        chat_id, chat_title = resolve_chat_db(con, args.chat)
+        params: list[Any] = [chat_id, _like_pattern(query)]
+        case_clause = ""
+        if args.case_sensitive:
+            case_clause = " AND instr(text, ?) > 0"
+            params.append(query)
+        params.append(_positive_limit(args.limit))
+        rows = con.execute(
+            f"""
+            SELECT message_id, date, is_outgoing, text, media_type
+            FROM tg_messages
+            WHERE chat_id = ?
+              AND text IS NOT NULL
+              AND text LIKE ? ESCAPE '\\'
+              {case_clause}
+            ORDER BY date DESC, message_id DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+    finally:
+        con.close()
+
+    return {
+        "chat": {"chat_id": chat_id, "title": chat_title},
+        "query": query,
+        "case_sensitive": bool(args.case_sensitive),
+        "limit": _positive_limit(args.limit),
+        "messages": [_message_summary(row) for row in rows],
+    }
+
+
+def _search_human(data: dict) -> None:
+    chat = data["chat"]
+    print(f"=== Search {data['query']!r} in {chat['title']} (chat_id {chat['chat_id']}) ===\n")
+    if not data["messages"]:
+        print("No cached messages matched.")
+        return
+    for message in data["messages"]:
+        ts = (message["date"] or "")[:19].replace("T", " ")
+        if message["text"]:
+            body = message["text"]
+        elif message["media_type"]:
+            body = f"[{message['media_type']}]"
+        else:
+            body = "[empty]"
+        print(f"  #{message['message_id']:<6} {ts}  {body}")
+
+
+def run_search(args) -> int:
+    return run_command(
+        "search", args,
+        runner=lambda: _search_runner(args),
+        human_formatter=_search_human,
+        audit_path=AUDIT_PATH,
+    )
+
+
+def _list_runner(args) -> dict[str, Any]:
+    since = _date_start(args.since)
+    until = _date_end(args.until)
+    order = "ASC" if args.reverse else "DESC"
+    where = ["chat_id = ?"]
+    params: list[Any] = []
+
+    con = connect_readonly(DB_PATH)
+    try:
+        chat_id, chat_title = resolve_chat_db(con, args.chat)
+        params.append(chat_id)
+        if since is not None:
+            where.append("date >= ?")
+            params.append(since)
+        if until is not None:
+            where.append("date <= ?")
+            params.append(until)
+        params.append(_positive_limit(args.limit))
+        rows = con.execute(
+            f"""
+            SELECT message_id, date, is_outgoing, text, media_type
+            FROM tg_messages
+            WHERE {" AND ".join(where)}
+            ORDER BY date {order}, message_id {order}
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+    finally:
+        con.close()
+
+    return {
+        "chat": {"chat_id": chat_id, "title": chat_title},
+        "order": "oldest_first" if args.reverse else "newest_first",
+        "filters": {
+            "limit": _positive_limit(args.limit),
+            "since": args.since,
+            "until": args.until,
+        },
+        "messages": [_message_summary(row) for row in rows],
+    }
+
+
+def _list_human(data: dict) -> None:
+    chat = data["chat"]
+    msgs = data["messages"]
+    if not msgs:
+        print(f"No cached messages for '{chat['title']}' matched the filters.")
+        return
+    direction = "oldest first" if data["order"] == "oldest_first" else "newest first"
+    print(f"=== {chat['title']}  chat_id {chat['chat_id']}  {len(msgs)} messages, {direction} ===\n")
+    for message in msgs:
+        arrow = "you" if message["is_outgoing"] else "them"
+        ts = (message["date"] or "")[:19].replace("T", " ")
+        if message["text"]:
+            body = message["text"]
+        elif message["media_type"]:
+            body = f"[{message['media_type']}]"
+        else:
+            body = "[empty]"
+        print(f"  #{message['message_id']:<6} {ts}  {arrow:<4}  {body}")
+
+
+def run_list(args) -> int:
+    return run_command(
+        "list-msgs", args,
+        runner=lambda: _list_runner(args),
+        human_formatter=_list_human,
+        audit_path=AUDIT_PATH,
+    )
+
+
+def _get_runner(args) -> dict[str, Any]:
+    con = connect_readonly(DB_PATH)
+    try:
+        chat_id, chat_title = resolve_chat_db(con, args.chat)
+        row = con.execute(
+            """
+            SELECT chat_id, message_id, sender_id, date, text,
+                   is_outgoing, reply_to_msg_id, has_media, media_type,
+                   media_path, raw_json
+            FROM tg_messages
+            WHERE chat_id = ? AND message_id = ?
+            """,
+            (chat_id, args.message_id),
+        ).fetchone()
+    finally:
+        con.close()
+
+    if row is None:
+        raise NotFound(f"message {args.message_id} not cached in chat {chat_id}")
+    return {
+        "chat": {"chat_id": chat_id, "title": chat_title},
+        "message": _full_message(row),
+    }
+
+
+def _get_human(data: dict) -> None:
+    chat = data["chat"]
+    message = data["message"]
+    print(f"{chat['title']} (chat_id {chat['chat_id']}) message #{message['message_id']}")
+    print(json.dumps(message, ensure_ascii=False, indent=2, default=str))
+
+
+def run_get(args) -> int:
+    return run_command(
+        "get-msg", args,
+        runner=lambda: _get_runner(args),
+        human_formatter=_get_human,
         audit_path=AUDIT_PATH,
     )
 

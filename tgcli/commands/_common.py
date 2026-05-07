@@ -46,3 +46,15 @@ def add_write_flags(parser: argparse.ArgumentParser, *, destructive: bool = Fals
     if destructive:
         parser.add_argument("--confirm", action="store_true",
                             help="Required in addition to --allow-write for destructive ops")
+
+
+def decode_raw_json(value: str | None):
+    """Return parsed raw_json when possible, preserving invalid cached text."""
+    if value is None or value == "":
+        return None
+    import json
+
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
