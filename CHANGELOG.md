@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-08
+
+Symbolic feature-complete release. The full surface — read, write,
+destructive, media, admin, plus the Python SDK — is now stable.
+
+### Surface
+- 62 CLI commands (up from 46 at v0.1.0)
+- Python SDK: `from tgcli import Client` with on-demand method coverage
+- 246 tests covering CLI runners, dispatch, safety gates, idempotency,
+  multi-account, and the SDK
+
+### Capabilities by phase
+- Phase 1–4: package refactor, JSON envelope output, exit-code catalog,
+  resolver with int / @username / fuzzy fallbacks, basic read API
+- Phase 6–6.2: text writes (send, edit-msg, forward, pin, react,
+  mark-read), forum topics, chat folders
+- Phase 8: read-only mode, lock-wait, owner-only file perms, path
+  injection guard, doctor command, multi-account
+- Phase 9: destructive commands with typed `--confirm <id>`
+- Phase 10: open-source readiness (LICENSE, pyproject.toml, CI,
+  CHANGELOG, README, ruff baseline)
+- Phase 12: media upload (photo, voice, video, document)
+- Phase 13: channel/group admin (12 commands incl. promote, demote,
+  ban, kick, set-permissions, chat-invite-link, chat-members)
+- Phase 11: Python SDK — `from tgcli import Client`, write-gate
+  enforcement, single-account-per-process
+
+### No code changes from v0.4.0
+This release is the symbolic 1.0 bump only. The bits on PyPI and the
+v0.4.0 wheel are functionally identical.
+
 ## [0.4.0] - 2026-05-08
 
 ### Added - Phase 11: SDK extraction
@@ -104,7 +135,8 @@ Telegram operations.
   `account-sessions`, `terminate-session`
 - Typed `--confirm <id>` matched against resolved chat/user/session id
 
-[Unreleased]: https://github.com/b1rd33/tg-cli/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/b1rd33/tg-cli/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/b1rd33/tg-cli/compare/v0.4.0...v1.0.0
 [0.4.0]: https://github.com/b1rd33/tg-cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/b1rd33/tg-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/b1rd33/tg-cli/compare/v0.1.0...v0.2.0
