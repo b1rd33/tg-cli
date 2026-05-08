@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-05-08
+
+Polish release. No code or behavior changes.
+
+### Added
+- MkDocs Material documentation site at <https://b1rd33.github.io/tg-cli/>
+  with 8 pages (home, install, quickstart, commands, SDK, safety,
+  multi-account, contributing).
+- Telethon attribution: linked in the README lede, in a new Credits
+  section, and as `[project.urls]` "Built on Telethon" upstream link.
+- `telegram-client` keyword in `pyproject.toml` for PyPI search hits.
+- `[docs]` optional dep group: `pip install -e .[docs]`.
+
+### Changed
+- README structure: CLI examples moved up after Quick start; Python
+  SDK section moved to the bottom (before Contributing).
+- `tg` shell wrapper comment cleaned up (dropped the stale
+  "or tg_scrape.py during transition" reference).
+- Test fixtures sanitized: replaced real-contact names + usernames
+  in `test_resolve.py` and `test_messages.py` with synthetic fixtures
+  preserving the diacritic / case-fold / fuzzy-disambiguation invariants.
+
 ## [1.0.0] - 2026-05-08
 
 Symbolic feature-complete release. The full surface — read, write,

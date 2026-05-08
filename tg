@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Convenience wrapper — runs tgcli (or tg_scrape.py during transition) with the project's venv Python.
-# Usage from tg-cli/:
+# Convenience wrapper — runs tgcli with the project's venv Python.
+# Usage from the repo root:
 #   ./tg contacts --limit 200
 #   ./tg backfill --download-media
 #   ./tg listen --notify --download-media
