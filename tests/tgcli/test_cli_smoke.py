@@ -34,7 +34,7 @@ from pathlib import Path as _Path
 def _run_stats_subprocess(tmp_path: _Path, *, db: _Path | None) -> _subprocess.CompletedProcess:
     """Invoke `python -m tgcli stats --json` with TG_DB_PATH/TG_AUDIT_PATH redirected to tmp_path."""
     project = _Path(__file__).resolve().parents[2]
-    py = project / ".venv" / "bin" / "python"
+    py = _sys.executable
     env = {
         **_os.environ,
         # Bypass credential guard (stats is read-only and doesn't connect to TG):
