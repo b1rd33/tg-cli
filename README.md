@@ -31,6 +31,46 @@ tg stats
 
 Get `TG_API_ID` and `TG_API_HASH` from https://my.telegram.org/apps.
 
+## CLI examples
+
+```bash
+# Sync chat metadata (no messages, fast)
+tg discover
+
+# Backfill messages from your top 10 chats
+tg backfill --max-chats 10 --per-chat 200
+
+# Search cached messages
+tg search "shipping" --json
+
+# Show recent messages from a specific chat
+tg show @username --limit 20
+
+# Send a message (--allow-write required for any Telegram write)
+tg send @username "hello from tg-cli" --allow-write
+
+# Pipe stdin as the message body
+echo "multi-line\nbody" | tg send @username - --allow-write
+
+# Reply to a specific message
+tg send @username "thanks!" --reply-to 12345 --allow-write
+
+# Listen for incoming messages — streams JSON envelopes to stdout
+tg listen
+
+# Forum topics
+tg topic-create -1001234567890 "Q1 planning" --allow-write
+tg send -1001234567890 "kickoff" --topic 42 --allow-write
+
+# Destructive ops require typed --confirm matching the resolved chat id
+tg delete-msg @username 99 100 --allow-write --confirm 12345
+
+# Health check
+tg doctor --json
+```
+
+Every command supports `--json` for clean agent integration. `--read-only` (or `TG_READONLY=1`) globally rejects writes for a hardened script.
+
 ## Features
 
 - 62 commands covering read, write, media, folder, topic, account, admin, and destructive operations
@@ -101,51 +141,6 @@ SQLite-backed reads, an audit trail, and explicit write gates. It is designed
 for shell scripts and coding agents that need to inspect or operate on the
 user's own Telegram account while keeping every write intentional.
 
-## Python SDK
-
-Use tg-cli inside your own Python apps without subprocess:
-
-```python
-from tgcli import Client
-
-c = Client()                                  # default account
-
-# Read paths
-me = c.me()
-summary = c.stats(min_msgs=10)
-history = c.messages.show(chat_id=12345, limit=50)
-
-# Write paths reuse the CLI's safety gates
-result = c.messages.send(
-    chat=12345,
-    text="hello",
-    allow_write=True,                         # required, mirrors --allow-write
-    idempotency_key="abc123",                 # optional replay protection
-)
-
-# Dry-run any write to preview without calling Telegram
-preview = c.messages.send(
-    chat=12345, text="hi", allow_write=True, dry_run=True
-)
-assert preview["dry_run"] is True
-```
-
-The SDK reuses the CLI's safety gates — calling a write method without
-`allow_write=True` raises `tgcli.safety.WriteDisallowed`. Destructive
-admin methods accept `confirm=<resolved-id>` matching the CLI
-`--confirm` flag.
-
-**Multi-account:** v0.4.0 SDK is single-account-per-process. Set
-`TG_ACCOUNT=<name>` BEFORE importing tgcli, then construct
-`Client(account="<name>")`. Mismatched constructions raise
-`RuntimeError`. For concurrent multi-account work, run one process
-per account.
-
-The SDK exposes a curated subset of runners (`me`, `stats`,
-`messages.send`, `messages.show`, `admin.chat_title`) for v1.0. All
-62 commands remain available through the CLI surface; open an issue
-if you need a specific runner exposed in the SDK.
-
 ## Configuration
 
 Paths and credentials can be provided through environment variables or a local
@@ -202,6 +197,51 @@ tg command
   -> Telethon and/or SQLite
   -> JSON envelope or human output
 ```
+
+## Python SDK
+
+For in-process use from another Python app — skip the subprocess overhead:
+
+```python
+from tgcli import Client
+
+c = Client()                                  # default account
+
+# Read paths
+me = c.me()
+summary = c.stats(min_msgs=10)
+history = c.messages.show(chat_id=12345, limit=50)
+
+# Write paths reuse the CLI's safety gates
+result = c.messages.send(
+    chat=12345,
+    text="hello",
+    allow_write=True,                         # required, mirrors --allow-write
+    idempotency_key="abc123",                 # optional replay protection
+)
+
+# Dry-run any write to preview without calling Telegram
+preview = c.messages.send(
+    chat=12345, text="hi", allow_write=True, dry_run=True
+)
+assert preview["dry_run"] is True
+```
+
+The SDK reuses the CLI's safety gates — calling a write method without
+`allow_write=True` raises `tgcli.safety.WriteDisallowed`. Destructive
+admin methods accept `confirm=<resolved-id>` matching the CLI
+`--confirm` flag.
+
+**Multi-account:** v0.4.0 SDK is single-account-per-process. Set
+`TG_ACCOUNT=<name>` BEFORE importing tgcli, then construct
+`Client(account="<name>")`. Mismatched constructions raise
+`RuntimeError`. For concurrent multi-account work, run one process
+per account.
+
+The SDK exposes a curated subset of runners (`me`, `stats`,
+`messages.send`, `messages.show`, `admin.chat_title`) for v1.0. All
+62 commands remain available through the CLI surface; open an issue
+if you need a specific runner exposed in the SDK.
 
 ## Contributing
 

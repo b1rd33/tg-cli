@@ -36,6 +36,10 @@ dev = [
   "pytest>=9.0",
   "ruff>=0.6",
 ]
+docs = [
+  "mkdocs>=1.6",
+  "mkdocs-material>=9.5",
+]
 
 [project.scripts]
 tg = "tgcli.__main__:main"

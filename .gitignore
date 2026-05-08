@@ -37,7 +37,10 @@ htmlcov/
 accounts/
 
 # Internal working notes (kept local, not for public repo)
-docs/
+docs/superpowers/
+
+# MkDocs build output (publishable docs source lives in docs/, output is git-ignored)
+site/
 
 # Agent metadata
 .claude/
