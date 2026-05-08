@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Symbolic feature-complete release. The full surface — read, write,
 destructive, media, admin, plus the Python SDK — is now stable.
 
+### Naming
+- PyPI distribution name: `tgctl` (`pip install tgctl`). The
+  shorter `tgcli` and `tg-cli` names are taken / collide on
+  PyPI's similarity check. The binary remains `tg`, the Python
+  import remains `from tgcli import Client`, and the GitHub repo
+  remains `b1rd33/tg-cli`.
+
 ### Surface
 - 62 CLI commands (up from 46 at v0.1.0)
 - Python SDK: `from tgcli import Client` with on-demand method coverage

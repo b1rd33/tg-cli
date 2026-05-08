@@ -1,8 +1,8 @@
-# tg-cli
+# tgctl
 
-[![PyPI](https://img.shields.io/pypi/v/tg-cli.svg)](https://pypi.org/project/tg-cli/)
+[![PyPI](https://img.shields.io/pypi/v/tgctl.svg)](https://pypi.org/project/tgctl/)
 [![CI](https://github.com/b1rd33/tg-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/b1rd33/tg-cli/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/pypi/pyversions/tg-cli.svg)](https://pypi.org/project/tg-cli/)
+[![Python](https://img.shields.io/pypi/pyversions/tgctl.svg)](https://pypi.org/project/tgctl/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Agent-friendly Telegram CLI** built on Telethon. Read, write, archive,
@@ -10,15 +10,19 @@ and listen to your own Telegram account from the terminal with JSON output,
 idempotency, audit logging, multi-account stores, and explicit safety gates
 for autonomous-agent use.
 
-`tg-cli` is for developers and local agents that need a predictable Telegram
+`tgctl` is for developers and local agents that need a predictable Telegram
 surface without running a bot account or handing control to a GUI client. It
 uses your normal Telegram account through Telethon and stores a local SQLite
 cache for fast offline queries.
 
+> **Names:** the PyPI distribution is `tgctl` (in the `kubectl`/`flyctl`
+> family — Telegram control). The binary on `PATH` is `tg`. The Python
+> import is `from tgcli import Client`. The GitHub repo is `tg-cli`.
+
 ## Quick start
 
 ```bash
-pip install tg-cli
+pip install tgctl
 echo "TG_API_ID=12345678" > .env
 echo "TG_API_HASH=abcdef0123456789abcdef0123456789" >> .env
 tg login

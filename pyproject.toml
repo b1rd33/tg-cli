@@ -3,7 +3,7 @@ requires = ["hatchling>=1.18"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tg-cli"
+name = "tgctl"
 description = "Agent-friendly Telegram CLI built on Telethon -- read, write, archive your Telegram from the terminal."
 readme = "README.md"
 license = "MIT"
