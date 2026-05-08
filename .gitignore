@@ -35,3 +35,9 @@ htmlcov/
 .vscode/
 .idea/
 accounts/
+
+# Internal working notes (kept local, not for public repo)
+docs/
+
+# Agent metadata
+.claude/

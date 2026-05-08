@@ -29,7 +29,7 @@ Get `TG_API_ID` and `TG_API_HASH` from https://my.telegram.org/apps.
 
 ## Features
 
-- 46 commands covering read, write, folder, topic, account, and destructive operations
+- 62 commands covering read, write, media, folder, topic, account, admin, and destructive operations
 - Multi-account mode with isolated session, database, and audit paths per account
 - JSON envelope output for clean agent integration
 - Local SQLite cache for fast reads and archival workflows
@@ -137,10 +137,10 @@ admin methods accept `confirm=<resolved-id>` matching the CLI
 `RuntimeError`. For concurrent multi-account work, run one process
 per account.
 
-The SDK exposes runners on demand. Currently wired: `me`, `stats`,
-`messages.send`, `messages.show`, `admin.chat_title`. The remaining
-~57 commands are reachable through the CLI; open an issue if you need
-a specific runner exposed in the SDK.
+The SDK exposes a curated subset of runners (`me`, `stats`,
+`messages.send`, `messages.show`, `admin.chat_title`) for v1.0. All
+62 commands remain available through the CLI surface; open an issue
+if you need a specific runner exposed in the SDK.
 
 ## Configuration
 

@@ -2,15 +2,33 @@
 
 Agent-friendly Telegram CLI built on Telethon. All commands emit a uniform JSON envelope or human output; writes are gated behind `--allow-write`; every invocation logs to `audit.log`.
 
-## Quick reference
+## Quick reference (62 commands)
 
-- **Read commands:** `stats`, `me`, `show`, `search`, `list-msgs`, `get-msg`, `contacts`, `unread`, `chats-info`, `topics-list`, `folders-list`, `folder-show`
-- **Write commands:** `send`, `edit-msg`, `forward`, `pin-msg`, `unpin-msg`, `react`, `mark-read`, `topic-create`, `topic-edit`, `topic-pin`, `topic-unpin`, `folder-create`, `folder-edit`, `folder-delete`, `folder-add-chat`, `folder-remove-chat`, `folders-reorder`
+- **Read:** `stats`, `me`, `show`, `search`, `list-msgs`, `get-msg`, `contacts`, `unread`, `chats-info`, `topics-list`, `folders-list`, `folder-show`, `chat-pinned-list`, `chat-members`, `account-sessions`
+- **Write — text:** `send`, `edit-msg`, `forward`, `pin-msg`, `unpin-msg`, `react`, `mark-read`
+- **Write — media:** `upload-photo`, `upload-voice`, `upload-video`, `upload-document`
+- **Write — topics:** `topic-create`, `topic-edit`, `topic-pin`, `topic-unpin`
+- **Write — folders:** `folder-create`, `folder-edit`, `folder-delete`, `folder-add-chat`, `folder-remove-chat`, `folders-reorder`
+- **Write — admin:** `chat-title`, `chat-photo`, `chat-description`, `set-permissions`, `chat-invite-link`, `unban-from-chat`
+- **Destructive (typed `--confirm <id>`):** `delete-msg`, `leave-chat`, `block-user`, `promote`, `demote`, `ban-from-chat`, `kick`, `terminate-session`
+- **Recoverable un-destructive:** `unblock-user`
 - **Local-DB writers:** `sync-contacts`, `discover`, `backfill` (write only to `telegram.sqlite`, not to Telegram)
 - **Live event stream:** `listen`
 - **Auth:** `login`
 - **Health:** `doctor`
 - **Multi-account:** `accounts-add`, `accounts-use`, `accounts-list`, `accounts-show`, `accounts-remove`
+
+### Python SDK (v0.4.0+)
+
+```python
+from tgcli import Client
+c = Client(account="default")
+me = await c.me()
+data = c.stats()
+result = await c.messages.send(chat=12345, text="...", allow_write=True)
+```
+
+Curated subset wired in v1.0; remaining commands available via CLI shell-out.
 
 ## Architectural facts
 
