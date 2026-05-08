@@ -26,9 +26,11 @@ def setup_db() -> sqlite3.Connection:
     con.executemany(
         "INSERT INTO tg_chats(chat_id, type, title, username) VALUES (?, ?, ?, ?)",
         [
-            (1, "user", "Hamïd Ijadi", "HRALEyn"),  # diacritic exercises strip_accents
-            (2, "user", "Hamburger Verein", None),
-            (3, "user", "Joel", None),
+            # Two diacritics (ø, ü) exercise strip_accents on multiple characters.
+            (1, "user", "Bjørn Müller", "diacritic_test_user"),
+            # Shares the 'Bj' prefix with #1 to drive the Ambiguous case below.
+            (2, "user", "Bjarne Test Group", None),
+            (3, "user", "Casefold Fixture", None),
         ],
     )
     return con
@@ -36,26 +38,26 @@ def setup_db() -> sqlite3.Connection:
 
 def test_resolve_by_int():
     con = setup_db()
-    assert resolve_chat_db(con, "3") == (3, "Joel")
+    assert resolve_chat_db(con, "3") == (3, "Casefold Fixture")
 
 
 def test_resolve_by_username():
     con = setup_db()
-    assert resolve_chat_db(con, "@HRALEyn") == (1, "Hamïd Ijadi")
+    assert resolve_chat_db(con, "@diacritic_test_user") == (1, "Bjørn Müller")
 
 
 def test_resolve_by_fuzzy():
     con = setup_db()
-    # 'ijadi' must match 'Hamïd Ijadi' through accent stripping AND case folding.
-    assert resolve_chat_db(con, "ijadi") == (1, "Hamïd Ijadi")
+    # 'müller' must match 'Bjørn Müller' through accent stripping AND case folding.
+    assert resolve_chat_db(con, "müller") == (1, "Bjørn Müller")
 
 
 def test_resolve_ambiguous_raises():
     con = setup_db()
     with pytest.raises(Ambiguous) as exc:
-        resolve_chat_db(con, "Ham")
-    assert exc.value.raw == "Ham"
-    assert exc.value.candidates == [(1, "Hamïd Ijadi"), (2, "Hamburger Verein")]
+        resolve_chat_db(con, "Bj")
+    assert exc.value.raw == "Bj"
+    assert exc.value.candidates == [(1, "Bjørn Müller"), (2, "Bjarne Test Group")]
 
 
 def test_resolve_not_found_raises():

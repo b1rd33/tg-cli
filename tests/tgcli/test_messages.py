@@ -9,7 +9,7 @@ def test_show_runner_delegates_pattern_to_resolver(monkeypatch, tmp_path):
     con = connect(db)
     con.execute(
         "INSERT INTO tg_chats(chat_id, type, title) VALUES (?, ?, ?)",
-        (123, "channel", "Polymarket"),
+        (123, "channel", "Synthetic Market Channel"),
     )
     con.execute(
         """
@@ -25,21 +25,21 @@ def test_show_runner_delegates_pattern_to_resolver(monkeypatch, tmp_path):
 
     def fake_resolve(con_arg, raw):
         calls.append(raw)
-        return 123, "Polymarket"
+        return 123, "Synthetic Market Channel"
 
     monkeypatch.setattr(messages, "DB_PATH", db)
     monkeypatch.setattr(messages, "resolve_chat_db", fake_resolve)
 
     args = argparse.Namespace(
-        pattern="Polymarket",
+        pattern="Synthetic Market Channel",
         chat_id=None,
         limit=10,
         reverse=False,
     )
     data = messages._show_runner(args)
 
-    assert calls == ["Polymarket"]
-    assert data["chat"] == {"chat_id": 123, "title": "Polymarket"}
+    assert calls == ["Synthetic Market Channel"]
+    assert data["chat"] == {"chat_id": 123, "title": "Synthetic Market Channel"}
     assert data["messages"] == [
         {
             "date": "2026-05-01T12:00:00",

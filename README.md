@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/tgctl.svg)](https://pypi.org/project/tgctl/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Agent-friendly Telegram CLI** built on Telethon. Read, write, archive,
+**Agent-friendly Telegram CLI** built on [Telethon](https://github.com/LonamiWebs/Telethon). Read, write, archive,
 and listen to your own Telegram account from the terminal with JSON output,
 idempotency, audit logging, multi-account stores, and explicit safety gates
 for autonomous-agent use.
@@ -205,9 +205,15 @@ tg command
 
 ## Contributing
 
-See [AGENTS.md](AGENTS.md) for the project's working conventions and
-[docs/superpowers/plans/](docs/superpowers/plans/) for the design history.
+See [AGENTS.md](AGENTS.md) for the project's working conventions and the
+[git commit history](https://github.com/b1rd33/tg-cli/commits/main) for the
+design progression.
 
 ## License
 
 MIT - see [LICENSE](LICENSE).
+
+## Credits
+
+Built on [Telethon](https://github.com/LonamiWebs/Telethon), the pure-Python
+MTProto client by Lonami, distributed under the MIT License.

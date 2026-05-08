@@ -45,6 +45,7 @@ Homepage = "https://github.com/b1rd33/tg-cli"
 Repository = "https://github.com/b1rd33/tg-cli"
 Issues = "https://github.com/b1rd33/tg-cli/issues"
 Changelog = "https://github.com/b1rd33/tg-cli/blob/main/CHANGELOG.md"
+"Built on Telethon" = "https://github.com/LonamiWebs/Telethon"
 
 [tool.hatch.version]
 path = "tgcli/__init__.py"

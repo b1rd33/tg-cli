@@ -65,8 +65,7 @@ make gate                            # test + diff-check
 ## Conventions
 
 - Conventional Commits: `feat|fix|docs|refactor|test|chore|perf|security|ci(scope): subject`. Optional commit-msg hook at `.githooks/commit-msg`; install via `make install-hooks`.
-- Plans live in `docs/superpowers/plans/YYYY-MM-DD-...md`
-- One commit per plan task on a `feat/phase-N-...` branch; squash-merge to main when phase complete.
+- One commit per task on a `feat/phase-N-...` branch; squash-merge to main when phase complete.
 - Audit log is append-only NDJSON at `audit.log`. Pre + post entries share `request_id`.
 
 ## Read me first if working on...
