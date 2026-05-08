@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-PYTHON = ROOT / ".venv" / "bin" / "python"
+# Use the Python that's running pytest. Works in local venv AND in CI where
+# the package is `pip install -e .`-ed into the runner's Python directly.
+PYTHON = sys.executable
 
 
 def test_module_help_exits_zero():
