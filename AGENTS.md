@@ -1,6 +1,14 @@
 # AGENTS.md — tg-cli
 
-Agent-friendly Telegram CLI built on Telethon. All commands emit a uniform JSON envelope or human output; writes are gated behind `--allow-write`; every invocation logs to `audit.log`.
+Agent-friendly Telegram CLI built on [Telethon](https://github.com/LonamiWebs/Telethon). All commands emit a uniform JSON envelope or human output; writes are gated behind `--allow-write`; every invocation logs to `audit.log`.
+
+## Status
+
+- **PyPI:** [`tgctl`](https://pypi.org/project/tgctl/) — `pip install tgctl`
+- **GitHub:** <https://github.com/b1rd33/tg-cli>
+- **Docs:** <https://b1rd33.github.io/tg-cli/>
+- **Latest:** v1.0.1 (2026-05-08) — feature-complete, MIT licensed
+- **CI:** Ubuntu + macOS × Python 3.12, 3.13 — green on `main`
 
 ## Quick reference (62 commands)
 
@@ -67,6 +75,12 @@ make gate                            # test + diff-check
 - Conventional Commits: `feat|fix|docs|refactor|test|chore|perf|security|ci(scope): subject`. Optional commit-msg hook at `.githooks/commit-msg`; install via `make install-hooks`.
 - One commit per task on a `feat/phase-N-...` branch; squash-merge to main when phase complete.
 - Audit log is append-only NDJSON at `audit.log`. Pre + post entries share `request_id`.
+
+## Release process
+
+- Tag `vX.Y.Z` on `main` after `make gate` is green.
+- `git push origin vX.Y.Z` triggers `.github/workflows/release.yml` which builds with hatchling, publishes to PyPI via Trusted Publisher (no API token), and creates a GitHub release with auto-generated notes.
+- Pages deploy of the docs site (`docs/` + `mkdocs.yml`) runs automatically on any push to `main` that touches them.
 
 ## Read me first if working on...
 
