@@ -4,6 +4,9 @@
 [![CI](https://github.com/b1rd33/tg-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/b1rd33/tg-cli/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/pypi/pyversions/tgctl.svg)](https://pypi.org/project/tgctl/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-b1rd33.github.io/tg--cli-blue)](https://b1rd33.github.io/tg-cli/)
+
+📖 **Documentation:** <https://b1rd33.github.io/tg-cli/>
 
 **Agent-friendly Telegram CLI** built on [Telethon](https://github.com/LonamiWebs/Telethon). Read, write, archive,
 and listen to your own Telegram account from the terminal with JSON output,
