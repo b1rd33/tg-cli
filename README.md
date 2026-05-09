@@ -49,6 +49,10 @@ tg show @username --limit 20
 # Send a message (--allow-write required for any Telegram write)
 tg send @username "hello from tg-cli" --allow-write
 
+# Format messages as HTML or Markdown
+tg send @username "<b>hello</b> from <i>tgctl</i>" --parse-mode html --allow-write
+tg send @username "**bold** and \`code\`" --parse-mode md --allow-write
+
 # Pipe stdin as the message body
 echo "multi-line\nbody" | tg send @username - --allow-write
 

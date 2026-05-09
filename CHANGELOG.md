@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-09
+
+### Added
+- `--parse-mode {plain,html,md}` flag on `send`, `edit-msg`,
+  `upload-photo`, `upload-voice`, `upload-video`, `upload-document`.
+  Send formatted messages: `<b>bold</b>`, `<i>italic</i>`, `<a href>`,
+  `<code>`, `<pre>`, `<spoiler>` for HTML; `**bold**`, `__italic__`,
+  `` `code` ``, `[text](url)`, `||spoiler||` for Markdown.
+- SDK: `Client().messages.send(..., parse_mode="html")` and a new
+  `Client().messages.edit(...)` method that didn't exist before.
+
+### Changed
+- **Default parse mode for outbound messages is now plain text.**
+  Previously `tg send` invoked Telethon without specifying
+  `parse_mode`, which fell back to Telethon's implicit Markdown
+  parser (interpreting `**bold**`, `` `code` ``, etc.). The new
+  default is explicit `plain` — WYSIWYG. Pass `--parse-mode md`
+  to opt back into Markdown.
+
 ## [1.0.1] - 2026-05-08
 
 Polish release. No code or behavior changes.

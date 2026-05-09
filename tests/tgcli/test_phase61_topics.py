@@ -26,6 +26,7 @@ def _args(**kw):
         "fuzzy": False,
         "json": True,
         "human": False,
+        "parse_mode": "plain",
     }
     defaults.update(kw)
     return argparse.Namespace(**defaults)
@@ -311,7 +312,7 @@ def test_send_topic_sets_reply_to_when_reply_to_unset(monkeypatch, tmp_path):
             return f"entity-{chat_id}"
 
         async def send_message(
-            self, entity, text, *, reply_to=None, silent=False, link_preview=True
+            self, entity, text, *, reply_to=None, silent=False, link_preview=True, parse_mode=None
         ):
             self.calls.append(("send_message", entity, text, reply_to, silent, link_preview))
             return FakeMessage()
@@ -348,7 +349,7 @@ def test_send_reply_to_overrides_topic_with_warning(monkeypatch, tmp_path):
             return f"entity-{chat_id}"
 
         async def send_message(
-            self, entity, text, *, reply_to=None, silent=False, link_preview=True
+            self, entity, text, *, reply_to=None, silent=False, link_preview=True, parse_mode=None
         ):
             self.reply_to = reply_to
             return FakeMessage()

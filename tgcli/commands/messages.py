@@ -122,6 +122,12 @@ def register(sub: argparse._SubParsersAction) -> None:
     )
     snd.add_argument("--silent", action="store_true", help="Send without notification")
     snd.add_argument("--no-webpage", action="store_true", help="Disable link preview")
+    snd.add_argument(
+        "--parse-mode",
+        choices=["plain", "html", "md"],
+        default="plain",
+        help="Parse text as HTML or Markdown. Default: plain (no parsing).",
+    )
     add_write_flags(snd, destructive=False)
     add_output_flags(snd)
     snd.set_defaults(func=run_send)
@@ -130,6 +136,12 @@ def register(sub: argparse._SubParsersAction) -> None:
     edit.add_argument("chat", help="Chat id, @username, or fuzzy title with --fuzzy")
     edit.add_argument("message_id", type=int, help="Telegram message id to edit")
     edit.add_argument("text", help="Replacement text, or '-' to read from stdin")
+    edit.add_argument(
+        "--parse-mode",
+        choices=["plain", "html", "md"],
+        default="plain",
+        help="Parse text as HTML or Markdown. Default: plain (no parsing).",
+    )
     add_write_flags(edit, destructive=False)
     add_output_flags(edit)
     edit.set_defaults(func=run_edit_msg)
@@ -782,6 +794,8 @@ async def _send_runner(args) -> dict[str, Any]:
         reply_to, warnings = _topic_reply_to(
             reply_to=args.reply_to, topic=getattr(args, "topic", None)
         )
+        parse_mode_arg = getattr(args, "parse_mode", "plain")
+        parse_mode = None if parse_mode_arg == "plain" else parse_mode_arg
         payload = {
             "chat": chat,
             "text": text,
@@ -789,6 +803,7 @@ async def _send_runner(args) -> dict[str, Any]:
             "topic_id": getattr(args, "topic", None),
             "silent": bool(args.silent),
             "link_preview": not bool(args.no_webpage),
+            "parse_mode": parse_mode,
             "telethon_method": "client.send_message",
             "warnings": warnings,
         }
@@ -817,6 +832,7 @@ async def _send_runner(args) -> dict[str, Any]:
                 reply_to=reply_to,
                 silent=bool(args.silent),
                 link_preview=not bool(args.no_webpage),
+                parse_mode=parse_mode,
             )
             data = {
                 "chat": chat,
@@ -859,10 +875,13 @@ async def _edit_msg_runner(args) -> dict[str, Any]:
             data["idempotent_replay"] = True
             return data
         chat = _resolve_write_chat(con, args, args.chat)
+        parse_mode_arg = getattr(args, "parse_mode", "plain")
+        parse_mode = None if parse_mode_arg == "plain" else parse_mode_arg
         payload = {
             "chat": chat,
             "message_id": int(args.message_id),
             "text": text,
+            "parse_mode": parse_mode,
             "telethon_method": "client.edit_message",
         }
         if args.dry_run:
@@ -882,7 +901,9 @@ async def _edit_msg_runner(args) -> dict[str, Any]:
         await client.start()
         try:
             entity = await client.get_entity(chat["chat_id"])
-            edited = await client.edit_message(entity, int(args.message_id), text)
+            edited = await client.edit_message(
+                entity, int(args.message_id), text, parse_mode=parse_mode
+            )
             data = {
                 "chat": chat,
                 "message_id": int(getattr(edited, "id", args.message_id)),

@@ -42,6 +42,7 @@ def _ns(**kwargs: Any) -> SimpleNamespace:
         "topic": None,
         "silent": False,
         "no_webpage": False,
+        "parse_mode": "plain",
         "include_deleted": False,
         "reverse": False,
         "limit": 50,
@@ -171,6 +172,7 @@ class _Messages(_Namespace):
         topic: int | None = None,
         silent: bool = False,
         no_webpage: bool = False,
+        parse_mode: str = "plain",
     ) -> dict[str, Any]:
         from tgcli.commands.messages import _send_runner
 
@@ -186,6 +188,33 @@ class _Messages(_Namespace):
             topic=topic,
             silent=silent,
             no_webpage=no_webpage,
+            parse_mode=parse_mode,
+        )
+
+    def edit(
+        self,
+        *,
+        chat: int | str,
+        message_id: int,
+        text: str,
+        allow_write: bool = False,
+        idempotency_key: str | None = None,
+        fuzzy: bool = False,
+        dry_run: bool = False,
+        parse_mode: str = "plain",
+    ) -> dict[str, Any]:
+        from tgcli.commands.messages import _edit_msg_runner
+
+        return self._c._call(
+            _edit_msg_runner,
+            chat=chat,
+            message_id=message_id,
+            text=text,
+            allow_write=allow_write,
+            idempotency_key=idempotency_key,
+            fuzzy=fuzzy,
+            dry_run=dry_run,
+            parse_mode=parse_mode,
         )
 
 

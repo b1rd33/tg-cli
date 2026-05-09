@@ -29,6 +29,7 @@ def _args(**kw):
         "json": True,
         "human": False,
         "caption": None,
+        "parse_mode": "plain",
         "reply_to": None,
         "silent": False,
         "ttl": None,
@@ -234,3 +235,36 @@ def test_upload_pre_audit_logs_absolute_path(monkeypatch, tmp_path):
     first_entry = json.loads(audit.read_text().splitlines()[0])
     assert first_entry["phase"] == "before"
     assert first_entry["payload_preview"]["file_path"] == str(path.resolve())
+
+
+def test_media_caption_with_parse_mode_html_passes_html(monkeypatch, tmp_path):
+    _patch_db(monkeypatch, tmp_path)
+    path = _write(tmp_path / "photo.jpg", b"\xff\xd8\xff\xe0data")
+    fake = FakeClient()
+    monkeypatch.setattr(media, "make_client", lambda session_path: fake)
+    args = _args(
+        chat="@alpha",
+        file=str(path),
+        caption="<b>look</b>",
+        parse_mode="html",
+    )
+
+    asyncio.run(media._upload_photo_runner(args))
+
+    send_call = next(c for c in fake.calls if c[0] == "send_file")
+    assert send_call[3]["caption"] == "<b>look</b>"
+    assert send_call[3]["parse_mode"] == "html"
+
+
+def test_media_no_caption_omits_parse_mode_kwarg(monkeypatch, tmp_path):
+    """When --caption is omitted, parse_mode should not be threaded to send_file."""
+    _patch_db(monkeypatch, tmp_path)
+    path = _write(tmp_path / "photo.jpg", b"\xff\xd8\xff\xe0data")
+    fake = FakeClient()
+    monkeypatch.setattr(media, "make_client", lambda session_path: fake)
+    args = _args(chat="@alpha", file=str(path), parse_mode="html")  # no caption
+
+    asyncio.run(media._upload_photo_runner(args))
+
+    send_call = next(c for c in fake.calls if c[0] == "send_file")
+    assert "parse_mode" not in send_call[3]
