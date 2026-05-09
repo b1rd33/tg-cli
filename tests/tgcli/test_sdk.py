@@ -175,3 +175,71 @@ def test_admin_chat_title_without_allow_write_raises():
     c = Client()
     with pytest.raises(WriteDisallowed):
         c.admin.chat_title(chat=-1001234567890, title="X")
+
+
+def test_sdk_messages_send_with_parse_mode_html_dry_run(tmp_path, monkeypatch):
+    """SDK forwards parse_mode to the runner; dry-run reflects it in the payload."""
+    from tgcli.db import connect
+
+    db = tmp_path / "db.sqlite"
+    con = connect(db)
+    con.execute(
+        "INSERT INTO tg_chats (chat_id, type, title) VALUES (?, ?, ?)",
+        (12345, "user", "Test"),
+    )
+    con.commit()
+    con.close()
+
+    from tgcli.commands import messages as msg_mod
+
+    monkeypatch.setattr(msg_mod, "DB_PATH", db)
+    monkeypatch.setattr(msg_mod, "AUDIT_PATH", tmp_path / "audit.log")
+
+    from tgcli import Client
+
+    c = Client()
+    result = c.messages.send(
+        chat=12345,
+        text="<b>hi</b>",
+        allow_write=True,
+        dry_run=True,
+        parse_mode="html",
+    )
+    assert result["dry_run"] is True
+    assert result["payload"]["parse_mode"] == "html"
+
+
+def test_sdk_messages_edit_method_exists_and_dry_runs(tmp_path, monkeypatch):
+    """Phase 1.1.0 adds Client().messages.edit(); verify it routes to the runner."""
+    from tgcli.db import connect
+
+    db = tmp_path / "db.sqlite"
+    con = connect(db)
+    con.execute(
+        "INSERT INTO tg_chats (chat_id, type, title) VALUES (?, ?, ?)",
+        (12345, "user", "Test"),
+    )
+    con.commit()
+    con.close()
+
+    from tgcli.commands import messages as msg_mod
+
+    monkeypatch.setattr(msg_mod, "DB_PATH", db)
+    monkeypatch.setattr(msg_mod, "AUDIT_PATH", tmp_path / "audit.log")
+
+    from tgcli import Client
+
+    c = Client()
+    assert hasattr(c.messages, "edit")
+    result = c.messages.edit(
+        chat=12345,
+        message_id=99,
+        text="**updated**",
+        allow_write=True,
+        dry_run=True,
+        parse_mode="md",
+    )
+    assert result["dry_run"] is True
+    assert result["command"] == "edit-msg"
+    assert result["payload"]["parse_mode"] == "md"
+    assert result["payload"]["message_id"] == 99

@@ -152,3 +152,4 @@ For write commands:
 | `--idempotency-key <key>` | Replay-safe: same key + same command returns the cached envelope without re-calling |
 | `--fuzzy` | Allow title-substring chat selectors on a write (otherwise rejected to prevent agent fat-fingering) |
 | `--confirm <id>` | Required on destructive commands; must equal the resolved chat/user/session id |
+| `--parse-mode {plain,html,md}` | Available on `send`, `edit-msg`, and the four `upload-*` (caption). Default `plain` — text is sent literally. `html` allows `<b>`, `<i>`, `<a href>`, `<code>`, `<pre>`, `<spoiler>`. `md` allows `**bold**`, `__italic__`, `` `code` ``, `[text](url)`, `\|\|spoiler\|\|`. v1.1.0+ |

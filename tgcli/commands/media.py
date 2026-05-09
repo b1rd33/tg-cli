@@ -57,6 +57,12 @@ def _add_media_args(parser: argparse.ArgumentParser, *, allow_ttl: bool) -> None
     parser.add_argument("file", help="Local file path to upload")
     parser.add_argument("--caption", default=None, help="Optional media caption")
     parser.add_argument(
+        "--parse-mode",
+        choices=["plain", "html", "md"],
+        default="plain",
+        help="Parse caption as HTML or Markdown. Default: plain. Ignored when --caption is omitted.",
+    )
+    parser.add_argument(
         "--reply-to", type=int, default=None, help="Reply to this Telegram message id"
     )
     parser.add_argument("--silent", action="store_true", help="Send without notification")
@@ -159,6 +165,9 @@ def _send_file_kwargs(args, kind: MediaKind, mime_type: str | None) -> dict[str,
         "reply_to": args.reply_to,
         "silent": bool(args.silent),
     }
+    if args.caption is not None:
+        parse_mode_arg = getattr(args, "parse_mode", "plain")
+        kwargs["parse_mode"] = None if parse_mode_arg == "plain" else parse_mode_arg
     if kind in {"photo", "video"} and getattr(args, "ttl", None) is not None:
         kwargs["ttl"] = args.ttl
     attrs = _media_attributes(kind)

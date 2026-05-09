@@ -95,3 +95,4 @@ make gate                            # test + diff-check
 - Reactions: free accounts can't react in Saved Messages or many groups; `react` returns exit 9 PREMIUM_REQUIRED.
 - Filter ids 0 and 1 are reserved server-side (`All chats`, `Archive`); user-created folders start at id 2.
 - Backfill respects `--max-messages` (default 100k) and `--max-db-size-mb` (default 500); refuses to start if exceeded.
+- Default parse mode for outbound writes is `plain` (literal text) since v1.1.0. Pass `--parse-mode html` or `--parse-mode md` to opt into formatting. Earlier versions fell back to Telethon's implicit Markdown.

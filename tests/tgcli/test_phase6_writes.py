@@ -28,6 +28,7 @@ def _args(**kw):
         "fuzzy": False,
         "json": True,
         "human": False,
+        "parse_mode": "plain",
     }
     defaults.update(kw)
     return argparse.Namespace(**defaults)
@@ -105,9 +106,18 @@ def test_send_calls_telethon_and_returns_new_message_id(monkeypatch, tmp_path):
             return f"entity-{chat_id}"
 
         async def send_message(
-            self, entity, text, *, reply_to=None, silent=False, link_preview=True
+            self,
+            entity,
+            text,
+            *,
+            reply_to=None,
+            silent=False,
+            link_preview=True,
+            parse_mode=None,
         ):
-            self.calls.append(("send_message", entity, text, reply_to, silent, link_preview))
+            self.calls.append(
+                ("send_message", entity, text, reply_to, silent, link_preview, parse_mode)
+            )
             return FakeMessage()
 
         async def disconnect(self):
@@ -120,8 +130,95 @@ def test_send_calls_telethon_and_returns_new_message_id(monkeypatch, tmp_path):
     data = asyncio.run(messages._send_runner(args))
 
     assert data["message_id"] == 777
-    assert ("send_message", "entity-123", "hello", 5, True, False) in fake.calls
+    assert ("send_message", "entity-123", "hello", 5, True, False, None) in fake.calls
     assert fake.calls[-1] == ("disconnect",)
+
+
+def _make_send_fake(monkeypatch, tmp_path):
+    """Helper: seeds a chat + monkeypatches a FakeClient. Returns the fake."""
+    db = tmp_path / "telegram.sqlite"
+    _seed_chat(db)
+    monkeypatch.setattr(messages, "DB_PATH", db)
+
+    class FakeMessage:
+        id = 778
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        async def start(self):
+            self.calls.append(("start",))
+
+        async def get_entity(self, chat_id):
+            return f"entity-{chat_id}"
+
+        async def send_message(
+            self,
+            entity,
+            text,
+            *,
+            reply_to=None,
+            silent=False,
+            link_preview=True,
+            parse_mode=None,
+        ):
+            self.calls.append(
+                ("send_message", entity, text, reply_to, silent, link_preview, parse_mode)
+            )
+            return FakeMessage()
+
+        async def disconnect(self):
+            self.calls.append(("disconnect",))
+
+    fake = FakeClient()
+    monkeypatch.setattr(messages, "make_client", lambda session_path: fake)
+    return fake
+
+
+def test_send_with_parse_mode_html_passes_html_to_telethon(monkeypatch, tmp_path):
+    fake = _make_send_fake(monkeypatch, tmp_path)
+    args = _args(
+        chat="@alpha",
+        text="<b>hi</b>",
+        reply_to=None,
+        silent=False,
+        no_webpage=False,
+        parse_mode="html",
+    )
+
+    asyncio.run(messages._send_runner(args))
+
+    sent_call = next(c for c in fake.calls if c[0] == "send_message")
+    assert sent_call == ("send_message", "entity-123", "<b>hi</b>", None, False, True, "html")
+
+
+def test_send_with_parse_mode_md_passes_md_to_telethon(monkeypatch, tmp_path):
+    fake = _make_send_fake(monkeypatch, tmp_path)
+    args = _args(
+        chat="@alpha",
+        text="**bold**",
+        reply_to=None,
+        silent=False,
+        no_webpage=False,
+        parse_mode="md",
+    )
+
+    asyncio.run(messages._send_runner(args))
+
+    sent_call = next(c for c in fake.calls if c[0] == "send_message")
+    assert sent_call == ("send_message", "entity-123", "**bold**", None, False, True, "md")
+
+
+def test_send_default_parse_mode_is_plain_passes_none_to_telethon(monkeypatch, tmp_path):
+    """v1.1.0 behavior change: default flips from Telethon's implicit MD to plain (None)."""
+    fake = _make_send_fake(monkeypatch, tmp_path)
+    args = _args(chat="@alpha", text="C# rocks", reply_to=None, silent=False, no_webpage=False)
+
+    asyncio.run(messages._send_runner(args))
+
+    sent_call = next(c for c in fake.calls if c[0] == "send_message")
+    assert sent_call[-1] is None
 
 
 def test_edit_msg_calls_telethon(monkeypatch, tmp_path):
@@ -142,8 +239,8 @@ def test_edit_msg_calls_telethon(monkeypatch, tmp_path):
         async def get_entity(self, chat_id):
             return f"entity-{chat_id}"
 
-        async def edit_message(self, entity, message_id, text):
-            self.calls.append(("edit_message", entity, message_id, text))
+        async def edit_message(self, entity, message_id, text, *, parse_mode=None):
+            self.calls.append(("edit_message", entity, message_id, text, parse_mode))
             return FakeMessage()
 
         async def disconnect(self):
@@ -156,8 +253,58 @@ def test_edit_msg_calls_telethon(monkeypatch, tmp_path):
     data = asyncio.run(messages._edit_msg_runner(args))
 
     assert data["message_id"] == 55
-    assert ("edit_message", "entity-123", 55, "updated") in fake.calls
+    assert ("edit_message", "entity-123", 55, "updated", None) in fake.calls
     assert fake.calls[-1] == ("disconnect",)
+
+
+def _make_edit_fake(monkeypatch, tmp_path):
+    db = tmp_path / "telegram.sqlite"
+    _seed_chat(db)
+    monkeypatch.setattr(messages, "DB_PATH", db)
+
+    class FakeMessage:
+        id = 56
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        async def start(self):
+            self.calls.append(("start",))
+
+        async def get_entity(self, chat_id):
+            return f"entity-{chat_id}"
+
+        async def edit_message(self, entity, message_id, text, *, parse_mode=None):
+            self.calls.append(("edit_message", entity, message_id, text, parse_mode))
+            return FakeMessage()
+
+        async def disconnect(self):
+            self.calls.append(("disconnect",))
+
+    fake = FakeClient()
+    monkeypatch.setattr(messages, "make_client", lambda session_path: fake)
+    return fake
+
+
+def test_edit_msg_with_parse_mode_html_passes_html(monkeypatch, tmp_path):
+    fake = _make_edit_fake(monkeypatch, tmp_path)
+    args = _args(chat="@alpha", message_id=56, text="<b>updated</b>", parse_mode="html")
+
+    asyncio.run(messages._edit_msg_runner(args))
+
+    edit_call = next(c for c in fake.calls if c[0] == "edit_message")
+    assert edit_call == ("edit_message", "entity-123", 56, "<b>updated</b>", "html")
+
+
+def test_edit_msg_with_parse_mode_md_passes_md(monkeypatch, tmp_path):
+    fake = _make_edit_fake(monkeypatch, tmp_path)
+    args = _args(chat="@alpha", message_id=56, text="**updated**", parse_mode="md")
+
+    asyncio.run(messages._edit_msg_runner(args))
+
+    edit_call = next(c for c in fake.calls if c[0] == "edit_message")
+    assert edit_call == ("edit_message", "entity-123", 56, "**updated**", "md")
 
 
 def test_forward_calls_telethon(monkeypatch, tmp_path):
@@ -349,9 +496,7 @@ def test_idempotency_key_skips_second_telethon_call(monkeypatch, tmp_path):
         async def get_entity(self, chat_id):
             return f"entity-{chat_id}"
 
-        async def send_message(
-            self, entity, text, *, reply_to=None, silent=False, link_preview=True
-        ):
+        async def send_message(self, entity, text, **kw):
             self.send_count += 1
             return FakeMessage()
 
@@ -464,9 +609,7 @@ def test_pre_audit_and_post_audit_share_request_id(monkeypatch, tmp_path, capsys
         async def get_entity(self, chat_id):
             return f"entity-{chat_id}"
 
-        async def send_message(
-            self, entity, text, *, reply_to=None, silent=False, link_preview=True
-        ):
+        async def send_message(self, entity, text, **kw):
             return FakeMessage()
 
         async def disconnect(self):
