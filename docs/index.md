@@ -58,7 +58,7 @@ chat to address.
 
 ## Status
 
-- **v1.0.0** released on PyPI
+- **v1.1.0** on PyPI — `pip install tgctl`
 - 62 CLI commands across read / write / destructive / media / admin
-- 246 tests, CI matrix on Ubuntu + macOS × Python 3.12, 3.13
+- 255 tests, CI matrix on Ubuntu + macOS × Python 3.12, 3.13
 - MIT licensed
